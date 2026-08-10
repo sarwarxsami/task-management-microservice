@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "express": "^5.2.1",
-    "pool": "^0.4.1"
+    "pg": "^8.x.x",
+    "pool": "^0.4.1",
+    "dotenv": "^17.4.2"
   }
 }

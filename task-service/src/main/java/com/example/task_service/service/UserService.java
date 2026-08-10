@@ -4,33 +4,20 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
-import com.example.task_service.model.User;
-import com.example.task_service.repository.UserRepository;
-
+import com.example.task_service.model.Task;
+import com.example.task_service.repository.TaskRepository;
 
 @Service
 public class UserService {
 
+    private final TaskRepository repository;
 
-    private final UserRepository repository;
-
-
-    public UserService(UserRepository repository) {
+    public UserService(TaskRepository repository) {
         this.repository = repository;
     }
 
-
-    public User saveUser(User user) {
-
-        return repository.save(user);
-
-    }
-
-
-    public List<User> getUsers(){
-
+    public List<Task> getTasks() {
         return repository.findAll();
-
     }
 
 }
