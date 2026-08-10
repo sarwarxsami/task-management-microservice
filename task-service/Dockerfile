@@ -15,6 +15,6 @@ FROM eclipse-temurin:21-jre-alpine AS runtime
 
 WORKDIR /task-service
 
-COPY --from=builder ./app/target/task-service-0.0.1-SNAPSHOT.jar /target/task-service.jar
+COPY --from=builder ./app/target/task-service-0.0.1-SNAPSHOT.jar task-service.jar
 
-CMD [ "java", "-jar", "./target/task-service.jar" ]
+CMD [ "java", "-jar", "./task-service.jar" ]

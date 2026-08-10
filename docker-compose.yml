@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:latest
+    container_name: postgres-db
+    ports:
+      - "5432:5432"
+    volumes:
+      - new-vol:/var/lib/postgresql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgresdb
+    networks:
+      - user-net
+      - task-net
+
+  task-service:
+    image: sarwarxsami/task-service:latest
+    container_name: task-service
+    ports:
+      - "8080:8080"
+    networks:
+      - task-net
+    env_file:
+      - ./task-service/.env
+
+  user-service:
+    image: sarwarxsami/user-service
+    container_name: user-service
+    ports:
+      - "3000:3000"
+    networks:
+      - user-net
+    env_file:
+      - ./user-service/.env
+
+volumes:
+  new-vol:
+
+networks:
+  user-net:
+  task-net:
