@@ -40,14 +40,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Copy compose file to VM
+      - name: Copy files to VM
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          source: docker-compose.yml
+          source: "docker-compose.yml,db/init.sql"
           target: /home/ubuntu/task-management-microservice
+          strip_components: 0
 
       - name: SSH and deploy
         uses: appleboy/ssh-action@v1.0.3
@@ -56,6 +57,7 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
-            cd /home/ubuntu/task-management-microservice
-            sudo docker compose pull
-            sudo docker compose up -d
+                  cd /home/ubuntu/task-management-microservice
+                  sudo docker compose down
+                  sudo docker compose pull
+                  sudo docker compose up -d
