@@ -24,6 +24,8 @@ services:
       - task-net
     env_file:
       - ./task-service/.env
+    depends_on:
+      - db
 
   user-service:
     image: sarwarxsami/user-service
@@ -34,7 +36,9 @@ services:
       - user-net
     env_file:
       - ./user-service/.env
-
+    depends_on:
+      - db
+      
 volumes:
   new-vol:
 
