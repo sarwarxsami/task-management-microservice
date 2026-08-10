@@ -23,7 +23,7 @@ services:
     networks:
       - task-net
     env_file:
-      - ./task-service/.env
+      - ./.env
     depends_on:
       - db
 
@@ -35,10 +35,10 @@ services:
     networks:
       - user-net
     env_file:
-      - ./user-service/.env
+      - ./.env
     depends_on:
       - db
-      
+
 volumes:
   new-vol:
 
