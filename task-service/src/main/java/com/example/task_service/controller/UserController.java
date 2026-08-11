@@ -29,7 +29,7 @@ public String debug(@Autowired DataSource dataSource) throws Exception {
         "\nURL: " + conn.getMetaData().getURL();
 }
 
-    @GetMapping("/service/show/task")
+    @GetMapping("/service/task-service/show/task")
     public List<Task> getTasks() {
         return service.getTasks();
     }

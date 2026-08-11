@@ -13,21 +13,21 @@ Base URL:
 
 user-service er api:
 
-POST /add/user
+POST /user-service/add/user
 Request Body:
 {
     "name": "Sami Sarwar",
     "studentId": "12345"
 }
 
-POST /add/task
+POST /user-service/add/task
 Request Body:
 {
     "studentId": "12345",
     "task": "Learn Docker"
 }
 
-GET /show/user
+GET /user-service/show/user
 Response:
 {
     "name": "Sami Sarwar",
@@ -38,7 +38,7 @@ Response:
 
 task-service er API
 
-GET /show/task
+GET /task-service/show/task
 Response:
 {
     "name": "Sami Sarwar",

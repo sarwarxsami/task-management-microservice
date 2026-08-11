@@ -5,7 +5,7 @@ const PORT = 3000;
 app.use(express.json());
 
 const router = require("./routes/index.js");
-app.use("/service",router);
+app.use("/service/user-service",router);
 app.use(express.json());
 
 app.listen(PORT, ()=>{
