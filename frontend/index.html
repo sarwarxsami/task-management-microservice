@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Task Management</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header>
+    <span class="logo">TMS</span>
+    <span class="tagline">Task Management System</span>
+  </header>
+
+  <main>
+
+    <!-- ADD USER -->
+    <section class="card">
+      <h2>Add User</h2>
+      <div class="form-group">
+        <input type="text" id="add-name" placeholder="Full name" />
+        <input type="text" id="add-student-id" placeholder="Student ID" />
+        <button id="btn-add-user">Add User</button>
+      </div>
+      <div class="result" id="result-add-user"></div>
+    </section>
+
+    <!-- ADD TASK -->
+    <section class="card">
+      <h2>Add Task</h2>
+      <div class="form-group">
+        <input type="text" id="task-student-id" placeholder="Student ID" />
+        <input type="text" id="task-text" placeholder="Task description" />
+        <button id="btn-add-task">Add Task</button>
+      </div>
+      <div class="result" id="result-add-task"></div>
+    </section>
+
+    <!-- SHOW USER -->
+    <section class="card">
+      <h2>Show User</h2>
+      <button id="btn-show-user">Fetch User</button>
+      <div class="result" id="result-show-user"></div>
+    </section>
+
+    <!-- SHOW TASKS -->
+    <section class="card">
+      <h2>Show Tasks</h2>
+      <button id="btn-show-tasks">Fetch Tasks</button>
+      <div class="result" id="result-show-tasks"></div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
