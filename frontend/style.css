@@ -815,6 +815,12 @@ button.link:disabled {
   width: auto;
 }
 
+/* data is refreshing in the background */
+main.loading {
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 820px) {

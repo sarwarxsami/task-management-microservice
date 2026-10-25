@@ -182,22 +182,31 @@ async function startSession(restore = false) {
   await openView(["discover", "viewers"].includes(last) || (last === "admin" && isAdmin()) ? last : "tasks");
 }
 
-// Loads whatever a view needs, then shows it
+const LOADERS = {
+  admin: async () => { await loadUsers(); renderUsers(); },
+  discover: () => loadDiscover(),
+  viewers: () => loadViewers(),
+  account: () => loadSettings(),
+};
+
+// Shows a view right away (with what was loaded last time) and refreshes its data in the background
 async function openView(name) {
   if (state.token && !state.user.username && name !== "account") {
     toast("Choose a username first", "err");
     name = "account";
   }
+  showView(name);
+  if (!LOADERS[name]) return;
+
+  const view = $(`view-${name}`);
+  view.classList.add("loading");
   try {
-    if (name === "admin") await loadUsers();
-    if (name === "discover") await loadDiscover();
-    if (name === "viewers") await loadViewers();
-    if (name === "account") await loadSettings();
+    await LOADERS[name]();
   } catch (err) {
     reportError(err);
-    if (err.sessionExpired) return;
+  } finally {
+    view.classList.remove("loading");
   }
-  showView(name);
 }
 
 // ---------- views ----------

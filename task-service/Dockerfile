@@ -23,4 +23,7 @@ COPY --from=builder /app/target/task-service-0.0.1-SNAPSHOT.jar task-service.jar
 
 USER app
 
+# Small fixed footprint so several JVMs fit on a small VM
+ENV JAVA_TOOL_OPTIONS="-Xms64m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
+
 CMD [ "java", "-jar", "./task-service.jar" ]
