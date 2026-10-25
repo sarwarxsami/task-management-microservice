@@ -9,49 +9,194 @@
 <body>
 
   <header>
-    <span class="logo">TMS</span>
-    <span class="tagline">Task Management System</span>
+    <div class="brand">
+      <span class="logo">TMS</span>
+      <span class="tagline">Task Management System</span>
+    </div>
+    <nav id="nav" hidden>
+      <span class="who"><b id="nav-name"></b> <span id="nav-role" class="badge"></span></span>
+      <button type="button" class="ghost" data-view="tasks">Tasks</button>
+      <button type="button" class="ghost" data-view="account">Account</button>
+      <button type="button" class="ghost" data-view="admin" id="nav-admin" hidden>Users</button>
+      <button type="button" class="ghost" id="btn-logout">Log out</button>
+    </nav>
   </header>
 
-  <main>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
 
-    <!-- ADD USER -->
+  <!-- AUTH -->
+  <main id="view-auth" class="narrow" hidden>
     <section class="card">
-      <h2>Add User</h2>
-      <div class="form-group">
-        <input type="text" id="add-name" placeholder="Full name" />
-        <input type="text" id="add-student-id" placeholder="Student ID" />
-        <button id="btn-add-user">Add User</button>
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-auth-tab="login">Log in</button>
+        <button type="button" class="tab" data-auth-tab="register">Register</button>
       </div>
-      <div class="result" id="result-add-user"></div>
-    </section>
 
-    <!-- ADD TASK -->
-    <section class="card">
-      <h2>Add Task</h2>
-      <div class="form-group">
-        <input type="text" id="task-student-id" placeholder="Student ID" />
-        <input type="text" id="task-text" placeholder="Task description" />
-        <button id="btn-add-task">Add Task</button>
-      </div>
-      <div class="result" id="result-add-task"></div>
-    </section>
+      <form id="form-login" class="form-group">
+        <label>Student ID<input name="studentId" autocomplete="username" required /></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+        <button type="submit">Log in</button>
+      </form>
 
-    <!-- SHOW USER -->
-    <section class="card">
-      <h2>Show User</h2>
-      <button id="btn-show-user">Fetch User</button>
-      <div class="result" id="result-show-user"></div>
+      <form id="form-register" class="form-group" hidden>
+        <label>Full name<input name="name" maxlength="100" autocomplete="name" required /></label>
+        <label>Student ID<input name="studentId" maxlength="50" pattern="[A-Za-z0-9_\-]+" title="Letters, digits, - or _" autocomplete="username" required /></label>
+        <label>Password<input name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required /></label>
+        <p class="hint">Already added before accounts existed? Register with your existing student ID to set a password.</p>
+        <button type="submit">Create account</button>
+      </form>
     </section>
-
-    <!-- SHOW TASKS -->
-    <section class="card">
-      <h2>Show Tasks</h2>
-      <button id="btn-show-tasks">Fetch Tasks</button>
-      <div class="result" id="result-show-tasks"></div>
-    </section>
-
   </main>
+
+  <!-- TASKS -->
+  <main id="view-tasks" hidden>
+    <section class="stats" aria-label="Summary">
+      <div class="stat"><span id="stat-total">0</span>Total</div>
+      <div class="stat"><span id="stat-active">0</span>Active</div>
+      <div class="stat"><span id="stat-done">0</span>Completed</div>
+      <div class="stat warn"><span id="stat-today">0</span>Due today</div>
+      <div class="stat bad"><span id="stat-overdue">0</span>Overdue</div>
+    </section>
+
+    <div class="columns">
+      <section class="card">
+        <h2>New task</h2>
+        <form id="form-task" class="form-group">
+          <label>Title<input name="title" maxlength="200" required placeholder="What needs doing?" /></label>
+          <label><span>Description <span class="optional">optional</span></span>
+            <textarea name="description" maxlength="2000" rows="4" placeholder="Details, links, notes..."></textarea>
+          </label>
+          <div class="row">
+            <label><span>Deadline <span class="optional">optional</span></span><input name="deadline" type="date" /></label>
+            <label>Priority
+              <select name="priority">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+          </div>
+          <label id="task-owner-field" hidden>Assign to
+            <select name="studentId"></select>
+          </label>
+          <button type="submit">Add task</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 id="tasks-title">My tasks</h2>
+          <button type="button" class="ghost small" id="btn-clear-done">Clear completed</button>
+        </div>
+
+        <div class="toolbar">
+          <input id="filter-search" type="search" placeholder="Search tasks..." aria-label="Search tasks" />
+          <select id="filter-sort" aria-label="Sort">
+            <option value="created">Newest first</option>
+            <option value="deadline">Deadline</option>
+            <option value="priority">Priority</option>
+            <option value="title">Title</option>
+          </select>
+          <select id="filter-user" aria-label="Show tasks of" hidden></select>
+        </div>
+
+        <div class="segmented" role="tablist" aria-label="Filter by status">
+          <button type="button" class="active" data-status="all">All</button>
+          <button type="button" data-status="active">Active</button>
+          <button type="button" data-status="completed">Completed</button>
+          <button type="button" data-status="overdue">Overdue</button>
+        </div>
+
+        <ul id="task-list" class="task-list"></ul>
+        <p id="task-empty" class="empty" hidden></p>
+      </section>
+    </div>
+  </main>
+
+  <!-- ACCOUNT -->
+  <main id="view-account" class="narrow" hidden>
+    <section class="card">
+      <h2>Profile</h2>
+      <form id="form-profile" class="form-group">
+        <label>Student ID<input id="profile-id" disabled /></label>
+        <label>Full name<input name="name" maxlength="100" required /></label>
+        <button type="submit">Save name</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Change password</h2>
+      <form id="form-password" class="form-group">
+        <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+        <label>New password<input name="newPassword" type="password" minlength="8" maxlength="72" autocomplete="new-password" required /></label>
+        <button type="submit">Update password</button>
+      </form>
+    </section>
+
+    <section class="card danger-zone">
+      <h2>Delete account</h2>
+      <p class="hint">Permanently deletes your account and all of your tasks.</p>
+      <button type="button" class="danger" id="btn-delete-account">Delete my account</button>
+    </section>
+  </main>
+
+  <!-- ADMIN -->
+  <main id="view-admin" hidden>
+    <section class="card">
+      <div class="card-head">
+        <h2>Users</h2>
+        <span class="hint" id="admin-count"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Student ID</th><th>Role</th><th>Tasks</th><th>Joined</th><th></th></tr>
+          </thead>
+          <tbody id="user-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <template id="tpl-task">
+    <li class="task">
+      <input type="checkbox" class="task-check" aria-label="Mark as done" />
+      <div class="task-body">
+        <div class="task-top">
+          <span class="task-title"></span>
+          <span class="pill priority"></span>
+          <span class="pill due" hidden></span>
+          <span class="pill owner" hidden></span>
+        </div>
+        <p class="task-desc" hidden></p>
+      </div>
+      <div class="task-actions">
+        <button type="button" class="ghost small" data-action="edit">Edit</button>
+        <button type="button" class="ghost small danger-text" data-action="delete">Delete</button>
+      </div>
+    </li>
+  </template>
+
+  <template id="tpl-task-edit">
+    <li class="task editing">
+      <form class="form-group task-edit">
+        <input name="title" maxlength="200" required aria-label="Title" />
+        <textarea name="description" maxlength="2000" rows="3" placeholder="Description (optional)" aria-label="Description"></textarea>
+        <div class="row">
+          <input name="deadline" type="date" aria-label="Deadline" />
+          <select name="priority" aria-label="Priority">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div class="row end">
+          <button type="button" class="ghost small" data-action="cancel">Cancel</button>
+          <button type="submit" class="small">Save</button>
+        </div>
+      </form>
+    </li>
+  </template>
 
   <script src="app.js"></script>
 </body>

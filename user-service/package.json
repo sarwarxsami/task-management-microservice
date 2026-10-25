@@ -3,11 +3,18 @@
   "private": true,
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
+    "jsonwebtoken": "^9.0.3",
     "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "supertest": "^7.3.1"
   }
 }

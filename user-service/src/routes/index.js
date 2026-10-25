@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
 
-const addRoutes = require('./addRoutes');
-const showRoutes = require('./showRoutes');
+const { router: authRoutes } = require('./authRoutes');
+const userRoutes = require('./userRoutes');
 
-router.use("/add",addRoutes);
-router.use("/show",showRoutes);
+router.get("/health", (req, res) => res.json({ status: "ok" }));
+router.use("/auth", authRoutes);
+router.use("/users", userRoutes);
 
 module.exports = router;

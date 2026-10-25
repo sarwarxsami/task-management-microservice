@@ -29,6 +29,7 @@ jobs:
       DB_NAME: ci
       DB_USER: ci
       DB_PASSWORD: ci
+      JWT_SECRET: ci-secret-that-is-at-least-32-characters-long
 
     steps:
       - name: Checkout code
@@ -60,11 +61,14 @@ jobs:
         with:
           node-version: 24
 
-      - name: Check user-service
+      - name: Test user-service
         working-directory: user-service
         run: |
           npm ci
-          for f in $(find src -name '*.js'); do node --check "$f"; done
+          npm test
+
+      - name: Check frontend
+        run: node --check frontend/app.js
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -134,15 +138,22 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
-                  set -e
+                  set -eo pipefail
                   cd /home/ubuntu/task-management-microservice
                   sudo mkdir -p /var/www/certbot
                   # free space from images left behind by earlier deploys (running containers keep theirs)
                   sudo docker image prune -af
                   sudo docker builder prune -af
                   df -h /
-                  sudo env IMAGE_TAG=${{ github.sha }} docker compose pull
-                  sudo env IMAGE_TAG=${{ github.sha }} docker compose up -d --remove-orphans
+                  export TAG=${{ github.sha }}
+                  sudo env IMAGE_TAG=$TAG docker compose pull
+                  sudo env IMAGE_TAG=$TAG docker compose up -d --wait db
+                  # back up, then apply the idempotent schema migration
+                  mkdir -p ~/backups
+                  sudo docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > ~/backups/db-$(date +%Y%m%d-%H%M%S).sql.gz
+                  ls -1t ~/backups/db-*.sql.gz | tail -n +11 | xargs -r rm --
+                  sudo docker compose exec -T db sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/init.sql'
+                  sudo env IMAGE_TAG=$TAG docker compose up -d --wait --remove-orphans
                   # re-mount the updated nginx.conf and re-resolve recreated upstream containers
                   sudo docker compose restart nginx
                   sudo docker image prune -af
@@ -150,7 +161,7 @@ jobs:
 
       - name: Smoke test
         run: |
-          for path in / /service/user-service/show/user /service/task-service/show/task; do
+          for path in / /service/user-service/health /service/task-service/health; do
             for i in $(seq 1 30); do
               code=$(curl -s -o /dev/null -w '%{http_code}' "https://task.sarwarxsami.me$path" || true)
               [ "$code" = "200" ] && break
@@ -158,4 +169,10 @@ jobs:
             done
             echo "$path -> $code"
             [ "$code" = "200" ]
+          done
+          # protected endpoints must reject anonymous requests
+          for path in /service/user-service/users /service/task-service/tasks; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://task.sarwarxsami.me$path")
+            echo "$path (no token) -> $code"
+            [ "$code" = "401" ]
           done
