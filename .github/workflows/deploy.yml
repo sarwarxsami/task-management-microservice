@@ -137,11 +137,16 @@ jobs:
                   set -e
                   cd /home/ubuntu/task-management-microservice
                   sudo mkdir -p /var/www/certbot
+                  # free space from images left behind by earlier deploys (running containers keep theirs)
+                  sudo docker image prune -af
+                  sudo docker builder prune -af
+                  df -h /
                   sudo env IMAGE_TAG=${{ github.sha }} docker compose pull
                   sudo env IMAGE_TAG=${{ github.sha }} docker compose up -d --remove-orphans
                   # re-mount the updated nginx.conf and re-resolve recreated upstream containers
                   sudo docker compose restart nginx
-                  sudo docker image prune -f
+                  sudo docker image prune -af
+                  df -h /
 
       - name: Smoke test
         run: |
