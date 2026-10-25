@@ -1,9 +1,29 @@
-const BASE = "https://task.sarwarxsami.me/service";
+const BASE = "/service";
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
 
 function setResult(id, content, type) {
-  const el = document.getElementById(id);
-  el.className = "result " + type;
-  el.innerHTML = content;
+  const target = document.getElementById(id);
+  target.className = "result " + type;
+  if (typeof content === "string") {
+    target.textContent = content;
+  } else {
+    target.replaceChildren(content);
+  }
+}
+
+async function errorMessage(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text).error || text;
+  } catch {
+    return text || "Request failed";
+  }
 }
 
 // ADD USER
@@ -24,9 +44,8 @@ document.getElementById("btn-add-user").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, studentId }),
     });
-    const text = await res.text();
-    if (!res.ok) throw new Error(text);
-    setResult("result-add-user", text, "ok");
+    if (!res.ok) throw new Error(await errorMessage(res));
+    setResult("result-add-user", await res.text(), "ok");
   } catch (err) {
     setResult("result-add-user", err.message, "err");
   }
@@ -45,14 +64,13 @@ document.getElementById("btn-add-task").addEventListener("click", async () => {
   setResult("result-add-task", "Adding task...", "loading");
 
   try {
-    const res = await fetch(`${BASE}/user-service/add/task`, {
+    const res = await fetch(`${BASE}/task-service/add/task`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ studentId, task }),
     });
-    const text = await res.text();
-    if (!res.ok) throw new Error(text);
-    setResult("result-add-task", text, "ok");
+    if (!res.ok) throw new Error(await errorMessage(res));
+    setResult("result-add-task", await res.text(), "ok");
   } catch (err) {
     setResult("result-add-task", err.message, "err");
   }
@@ -72,14 +90,18 @@ document.getElementById("btn-show-user").addEventListener("click", async () => {
       return;
     }
 
-    const html = data.map(u => `
-      <div class="user-info" style="margin-bottom:10px">
-        <span><b>${u.name}</b></span>
-        <span>Student ID: <b>${u.student_id}</b></span>
-      </div>
-    `).join("");
+    const list = document.createDocumentFragment();
+    for (const u of data) {
+      const row = el("div", "user-info");
+      const name = el("span");
+      name.append(el("b", null, u.name));
+      const id = el("span", null, "Student ID: ");
+      id.append(el("b", null, u.student_id));
+      row.append(name, id);
+      list.append(row);
+    }
 
-    setResult("result-show-user", html, "ok");
+    setResult("result-show-user", list, "ok");
   } catch (err) {
     setResult("result-show-user", err.message, "err");
   }
@@ -99,9 +121,14 @@ document.getElementById("btn-show-tasks").addEventListener("click", async () => 
       return;
     }
 
-    const items = data.map(t => `<li>${t.task} <span style="color:var(--muted)">(${t.studentId})</span></li>`).join("");
-    const html = `<ul class="task-list">${items}</ul>`;
-    setResult("result-show-tasks", html, "ok");
+    const list = el("ul", "task-list");
+    for (const t of data) {
+      const item = el("li", null, t.task + " ");
+      item.append(el("span", "muted", `(${t.studentId})`));
+      list.append(item);
+    }
+
+    setResult("result-show-tasks", list, "ok");
   } catch (err) {
     setResult("result-show-tasks", err.message, "err");
   }

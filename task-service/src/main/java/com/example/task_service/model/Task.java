@@ -24,8 +24,7 @@ public class Task {
     public Task() {
     }
 
-    public Task(int id, String studentId, String task) {
-        this.id = id;
+    public Task(String studentId, String task) {
         this.studentId = studentId;
         this.task = task;
     }

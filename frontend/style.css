@@ -191,3 +191,10 @@ button:disabled {
   color: var(--text);
   font-weight: 600;
 }
+.user-info + .user-info {
+  margin-top: 10px;
+}
+
+.muted {
+  color: var(--muted);
+}

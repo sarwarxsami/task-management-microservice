@@ -1,14 +1,15 @@
 services:
   nginx:
-    image: nginx:alpine
+    image: nginx:1.31-alpine
     container_name: nginx
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./api-gateway/nginx.conf:/etc/nginx/nginx.conf
+      - ./api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - ./frontend:/usr/share/nginx/html
+      - /var/www/certbot:/var/www/certbot:ro
+      - ./frontend:/usr/share/nginx/html:ro
     depends_on:
       - task-service
       - user-service
@@ -16,39 +17,50 @@ services:
       - task-net
       - user-net
     restart: unless-stopped
+
   db:
-    image: postgres:latest
+    image: postgres:18
     container_name: postgres-db
     volumes:
       - new-vol:/var/lib/postgresql
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=postgresdb
+      - POSTGRES_USER=${DB_USER:?DB_USER must be set in .env}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      - POSTGRES_DB=${DB_NAME:?DB_NAME must be set in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - user-net
       - task-net
+    restart: unless-stopped
 
   task-service:
-    image: sarwarxsami/task-service:latest
+    image: sarwarxsami/task-service:${IMAGE_TAG:-latest}
     container_name: task-service
     networks:
       - task-net
     env_file:
       - ./.env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
   user-service:
-    image: sarwarxsami/user-service
+    image: sarwarxsami/user-service:${IMAGE_TAG:-latest}
     container_name: user-service
     networks:
       - user-net
     env_file:
       - ./.env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   new-vol:

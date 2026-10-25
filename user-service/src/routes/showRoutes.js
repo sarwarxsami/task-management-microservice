@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../models/db');
 
-//GET /service/show/user
+// GET /service/user-service/show/user
 router.get("/user", async (req, res) => {
 
     try {
@@ -11,7 +11,7 @@ router.get("/user", async (req, res) => {
         );
         return res.json(allUsers.rows);
     } catch (error) {
-        console.error(err);
+        console.error("Error fetching users:", error);
         return res.status(500).json({
             error: "Internal Server Error"
         });

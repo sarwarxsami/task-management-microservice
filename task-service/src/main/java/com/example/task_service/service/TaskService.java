@@ -8,16 +8,20 @@ import com.example.task_service.model.Task;
 import com.example.task_service.repository.TaskRepository;
 
 @Service
-public class UserService {
+public class TaskService {
 
     private final TaskRepository repository;
 
-    public UserService(TaskRepository repository) {
+    public TaskService(TaskRepository repository) {
         this.repository = repository;
     }
 
     public List<Task> getTasks() {
         return repository.findAll();
+    }
+
+    public Task addTask(String studentId, String task) {
+        return repository.save(new Task(studentId, task));
     }
 
 }

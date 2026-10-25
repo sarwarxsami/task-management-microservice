@@ -1,8 +1,13 @@
 {
+  "name": "user-service",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
   "dependencies": {
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "pg": "^8.x.x",
-    "pool": "^0.4.1",
-    "dotenv": "^17.4.2"
+    "pg": "^8.16.3"
   }
 }
