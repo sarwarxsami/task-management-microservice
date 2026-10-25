@@ -152,7 +152,8 @@ jobs:
                   mkdir -p ~/backups
                   sudo docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > ~/backups/db-$(date +%Y%m%d-%H%M%S).sql.gz
                   ls -1t ~/backups/db-*.sql.gz | tail -n +11 | xargs -r rm --
-                  sudo docker compose exec -T db sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/init.sql'
+                  # piped from the host: the container's bind-mounted copy is stale after scp replaces the file
+                  sudo docker compose exec -T db sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/init.sql
                   sudo env IMAGE_TAG=$TAG docker compose up -d --wait --remove-orphans
                   # re-mount the updated nginx.conf and re-resolve recreated upstream containers
                   sudo docker compose restart nginx
