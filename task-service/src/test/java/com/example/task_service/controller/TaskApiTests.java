@@ -33,11 +33,13 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 
 // Integration tests: need a Postgres with db/init.sql applied (DB_* env vars)
-@SpringBootTest(properties = "app.jwt.secret=" + TaskApiTests.SECRET)
+@SpringBootTest(properties = { "app.jwt.secret=" + TaskApiTests.SECRET,
+        "app.internal.key=" + TaskApiTests.INTERNAL_KEY })
 @AutoConfigureMockMvc
 class TaskApiTests {
 
     static final String SECRET = "test-secret-that-is-at-least-32-characters";
+    static final String INTERNAL_KEY = "test-internal-key-that-is-at-least-32-chars";
     private static final String BASE = "/service/task-service";
 
     @Autowired
@@ -108,6 +110,7 @@ class TaskApiTests {
                 .andExpect(jsonPath("$.description").value("Chapter 2"))
                 .andExpect(jsonPath("$.deadline").value("2030-01-15"))
                 .andExpect(jsonPath("$.priority").value("high"))
+                .andExpect(jsonPath("$.visibility").value("only_me"))
                 .andExpect(jsonPath("$.completed").value(false))
                 .andExpect(jsonPath("$.studentId").value("j-alice"));
 
@@ -233,5 +236,47 @@ class TaskApiTests {
         jdbc.update("DELETE FROM users WHERE student_id = 'j-alice'");
         Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM tasks WHERE student_id = 'j-alice'", Integer.class);
         assertEquals(0, count);
+    }
+
+    @Test
+    void visibilityIsValidatedAndKeptOnUpdate() throws Exception {
+        String alice = token("j-alice", "user");
+        int id = createTask(alice, "{\"title\":\"Shared\",\"visibility\":\"trusted\"}");
+
+        mvc.perform(put(BASE + "/tasks/" + id).header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"Still shared\"}"))
+                .andExpect(jsonPath("$.visibility").value("trusted"));
+        mvc.perform(put(BASE + "/tasks/" + id).header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"x\",\"visibility\":\"open\"}"))
+                .andExpect(jsonPath("$.visibility").value("open"));
+        mvc.perform(post(BASE + "/tasks").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"x\",\"visibility\":\"everyone\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void internalApiRequiresKeyAndFiltersByVisibility() throws Exception {
+        String alice = token("j-alice", "user");
+        String bob = token("j-bob", "user");
+        createTask(alice, "{\"title\":\"private\"}");
+        createTask(alice, "{\"title\":\"trusted\",\"visibility\":\"trusted\"}");
+        createTask(alice, "{\"title\":\"open\",\"visibility\":\"open\"}");
+        createTask(bob, "{\"title\":\"bob open\",\"visibility\":\"open\"}");
+
+        mvc.perform(get("/internal/tasks?visibilities=open"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/internal/tasks?visibilities=open").header("X-Internal-Key", "wrong"))
+                .andExpect(status().isUnauthorized());
+        // a user JWT is not enough for the internal API
+        mvc.perform(get("/internal/tasks?visibilities=open").header("Authorization", alice))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(get("/internal/tasks?studentIds=j-alice&visibilities=trusted,open").header("X-Internal-Key", INTERNAL_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+        mvc.perform(get("/internal/tasks?studentIds=j-alice,j-bob&visibilities=open").header("X-Internal-Key", INTERNAL_KEY))
+                .andExpect(jsonPath("$", hasSize(2)));
+        mvc.perform(get("/internal/tasks?visibilities=only_me,bogus").header("X-Internal-Key", INTERNAL_KEY))
+                .andExpect(status().isBadRequest());
     }
 }

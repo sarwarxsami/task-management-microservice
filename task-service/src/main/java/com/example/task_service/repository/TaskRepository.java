@@ -14,6 +14,10 @@ public interface TaskRepository extends JpaRepository<Task, Integer> {
 
     List<Task> findByStudentIdOrderByCreatedAtDescIdDesc(String studentId);
 
+    List<Task> findByVisibilityInOrderByCreatedAtDescIdDesc(List<String> visibilities);
+
+    List<Task> findByStudentIdInAndVisibilityInOrderByCreatedAtDescIdDesc(List<String> studentIds, List<String> visibilities);
+
     @Transactional
     long deleteByStudentIdAndCompletedTrue(String studentId);
 }

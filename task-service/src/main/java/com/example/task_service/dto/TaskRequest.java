@@ -8,6 +8,7 @@ public record TaskRequest(
         String description,
         LocalDate deadline,
         String priority,
+        String visibility,
         Boolean completed,
         String studentId) {
 }

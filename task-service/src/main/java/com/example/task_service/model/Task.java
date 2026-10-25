@@ -35,6 +35,9 @@ public class Task {
     @Column(name = "priority")
     private String priority = "medium";
 
+    @Column(name = "visibility")
+    private String visibility = "only_me";
+
     @Column(name = "completed")
     private boolean completed;
 
@@ -90,6 +93,10 @@ public class Task {
         return priority;
     }
 
+    public String getVisibility() {
+        return visibility;
+    }
+
     public boolean isCompleted() {
         return completed;
     }
@@ -124,6 +131,10 @@ public class Task {
 
     public void setPriority(String priority) {
         this.priority = priority;
+    }
+
+    public void setVisibility(String visibility) {
+        this.visibility = visibility;
     }
 
     public void setCompleted(boolean completed) {

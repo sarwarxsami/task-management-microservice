@@ -1,5 +1,6 @@
 // Integration tests: need a Postgres with db/init.sql applied (DB_* env vars)
 process.env.JWT_SECRET ??= "test-secret-that-is-at-least-32-characters";
+process.env.INTERNAL_API_KEY ??= "test-internal-key-that-is-at-least-32-chars";
 process.env.ADMIN_STUDENT_IDS = "t-admin";
 
 const { test, before, after } = require('node:test');
@@ -15,8 +16,8 @@ async function cleanup() {
     await pool.query("DELETE FROM users WHERE student_id = ANY($1)", [IDS]);
 }
 
-function register(studentId, name = studentId, password = "password123") {
-    return request(app).post(`${BASE}/auth/register`).send({ name, studentId, password });
+function register(studentId, name = studentId, password = "password123", username = studentId.replace("-", "_")) {
+    return request(app).post(`${BASE}/auth/register`).send({ name, studentId, password, username });
 }
 
 before(cleanup);
@@ -34,7 +35,7 @@ test("register, login and me", async () => {
     const reg = await register("t-alice", "Alice");
     assert.equal(reg.status, 201);
     assert.ok(reg.body.token);
-    assert.deepEqual(reg.body.user, { name: "Alice", studentId: "t-alice", role: "user" });
+    assert.deepEqual(reg.body.user, { name: "Alice", studentId: "t-alice", username: "t_alice", role: "user" });
 
     const dup = await register("t-alice");
     assert.equal(dup.status, 409);
@@ -108,4 +109,35 @@ test("authorization on user routes", async () => {
 test("rejects tampered tokens", async () => {
     const res = await request(app).get(`${BASE}/auth/me`).set("Authorization", "Bearer abc.def.ghi");
     assert.equal(res.status, 401);
+});
+
+test("usernames are validated, lowercased and unique", async () => {
+    const bad = await register("t-bob", "Bob", "password123", "no spaces!");
+    assert.equal(bad.status, 400);
+
+    const taken = await register("t-bob", "Bob", "password123", "T_ADMIN");
+    assert.equal(taken.status, 409);
+    assert.equal(taken.body.error, "Username is already taken");
+
+    const ok = await register("t-bob", "Bob", "password123", "Bob_B");
+    assert.equal(ok.status, 201);
+    assert.equal(ok.body.user.username, "bob_b");
+
+    const rename = await request(app).put(`${BASE}/users/t-bob`).set("Authorization", `Bearer ${ok.body.token}`).send({ username: "bobby" });
+    assert.equal(rename.status, 200);
+    assert.equal(rename.body.username, "bobby");
+    await pool.query("DELETE FROM users WHERE student_id = 't-bob'");
+});
+
+test("internal user lookup requires the internal key", async () => {
+    await register("t-bob", "Bob", "password123", "t_bob");
+
+    assert.equal((await request(app).get("/internal/users?ids=t-bob")).status, 401);
+    assert.equal((await request(app).get("/internal/users?ids=t-bob").set("X-Internal-Key", "wrong")).status, 401);
+
+    const res = await request(app).get("/internal/users?ids=t-bob&usernames=T_ADMIN")
+        .set("X-Internal-Key", process.env.INTERNAL_API_KEY);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.map(u => u.username).sort(), ["t_admin", "t_bob"]);
+    assert.ok(res.body.every(u => !("password_hash" in u)));
 });

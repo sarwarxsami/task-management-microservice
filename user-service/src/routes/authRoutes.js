@@ -5,7 +5,7 @@ const router = express.Router();
 const pool = require('../models/db');
 const { ADMIN_STUDENT_IDS } = require('../config');
 const { signToken, requireAuth } = require('../middleware/auth');
-const { validName, validStudentId, validPassword } = require('../validation');
+const { validName, validStudentId, validPassword, normalizeUsername, validUsername } = require('../validation');
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -16,8 +16,10 @@ const authLimiter = rateLimit({
     message: { error: "Too many attempts, try again later" },
 });
 
+const USERNAME_TAKEN = "users_username_key";
+
 function publicUser(row) {
-    return { name: row.name, studentId: row.student_id, role: row.role };
+    return { name: row.name, studentId: row.student_id, username: row.username, role: row.role };
 }
 
 // Admins are bootstrapped from ADMIN_STUDENT_IDS
@@ -32,25 +34,34 @@ async function syncAdminRole(user) {
 // POST /service/user-service/auth/register
 router.post("/register", authLimiter, async (req, res) => {
     const { name, studentId, password } = req.body ?? {};
+    const username = normalizeUsername(req.body?.username);
 
-    if (!validName(name) || !validStudentId(studentId) || !validPassword(password)) {
+    if (!validName(name) || !validStudentId(studentId) || !validPassword(password) || !validUsername(username)) {
         return res.status(400).json({
-            error: "Name (1-100 chars), student ID (letters, digits, - or _) and password (8-72 chars) are required"
+            error: "Name (1-100 chars), student ID (letters, digits, - or _), username (3-30 lowercase letters, digits or _) and password (8-72 chars) are required"
         });
     }
 
     const hash = await bcrypt.hash(password, 10);
 
     // Accounts created before login existed have no password yet; registering claims them
-    const result = await pool.query(
-        `INSERT INTO users (name, student_id, password_hash)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (student_id) DO UPDATE
-             SET name = EXCLUDED.name, password_hash = EXCLUDED.password_hash
-             WHERE users.password_hash IS NULL
-         RETURNING name, student_id, role`,
-        [name.trim(), studentId, hash]
-    );
+    let result;
+    try {
+        result = await pool.query(
+            `INSERT INTO users (name, student_id, username, password_hash)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (student_id) DO UPDATE
+                 SET name = EXCLUDED.name, username = EXCLUDED.username, password_hash = EXCLUDED.password_hash
+                 WHERE users.password_hash IS NULL
+             RETURNING name, student_id, username, role`,
+            [name.trim(), studentId, username, hash]
+        );
+    } catch (error) {
+        if (error.constraint === USERNAME_TAKEN) {
+            return res.status(409).json({ error: "Username is already taken" });
+        }
+        throw error;
+    }
 
     if (result.rows.length === 0) {
         return res.status(409).json({ error: "User already registered" });
@@ -69,7 +80,7 @@ router.post("/login", authLimiter, async (req, res) => {
     }
 
     const result = await pool.query(
-        "SELECT name, student_id, role, password_hash FROM users WHERE student_id = $1",
+        "SELECT name, student_id, username, role, password_hash FROM users WHERE student_id = $1",
         [studentId]
     );
     const user = result.rows[0];
@@ -85,7 +96,7 @@ router.post("/login", authLimiter, async (req, res) => {
 // GET /service/user-service/auth/me
 router.get("/me", requireAuth, async (req, res) => {
     const result = await pool.query(
-        "SELECT name, student_id, role FROM users WHERE student_id = $1",
+        "SELECT name, student_id, username, role FROM users WHERE student_id = $1",
         [req.user.studentId]
     );
 
@@ -96,4 +107,4 @@ router.get("/me", requireAuth, async (req, res) => {
     return res.json(publicUser(result.rows[0]));
 });
 
-module.exports = { router, publicUser };
+module.exports = { router, publicUser, USERNAME_TAKEN };

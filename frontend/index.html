@@ -16,6 +16,8 @@
     <nav id="nav" hidden>
       <span class="who"><b id="nav-name"></b> <span id="nav-role" class="badge"></span></span>
       <button type="button" class="ghost" data-view="tasks">Tasks</button>
+      <button type="button" class="ghost" data-view="discover">Discover</button>
+      <button type="button" class="ghost" data-view="viewers">Viewers <span id="nav-requests" class="count" hidden></span></button>
       <button type="button" class="ghost" data-view="account">Account</button>
       <button type="button" class="ghost" data-view="admin" id="nav-admin" hidden>Users</button>
       <button type="button" class="ghost" id="btn-logout">Log out</button>
@@ -41,6 +43,7 @@
       <form id="form-register" class="form-group" hidden>
         <label>Full name<input name="name" maxlength="100" autocomplete="name" required /></label>
         <label>Student ID<input name="studentId" maxlength="50" pattern="[A-Za-z0-9_\-]+" title="Letters, digits, - or _" autocomplete="username" required /></label>
+        <label>Username<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" title="3-30 letters, digits or _" placeholder="shown to other users" required /></label>
         <label>Password<input name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required /></label>
         <p class="hint">Already added before accounts existed? Register with your existing student ID to set a password.</p>
         <button type="submit">Create account</button>
@@ -76,6 +79,13 @@
               </select>
             </label>
           </div>
+          <label>Visibility
+            <select name="visibility">
+              <option value="only_me" selected>Only Me</option>
+              <option value="trusted">Trusted (your task viewers)</option>
+              <option value="open">Open (everyone)</option>
+            </select>
+          </label>
           <label id="task-owner-field" hidden>Assign to
             <select name="studentId"></select>
           </label>
@@ -113,15 +123,102 @@
     </div>
   </main>
 
+  <!-- DISCOVER -->
+  <main id="view-discover" hidden>
+    <div class="columns even">
+      <section class="card">
+        <div class="card-head">
+          <h2>Discover</h2>
+          <span class="hint" id="discover-count"></span>
+        </div>
+        <input id="discover-search" type="search" placeholder="Search by name or username..." aria-label="Search people" />
+        <ul id="people-list" class="people"></ul>
+        <p id="people-empty" class="empty" hidden>No listed users yet.</p>
+      </section>
+
+      <section class="card">
+        <h2>Open tasks</h2>
+        <ul id="open-list" class="task-list"></ul>
+        <p id="open-empty" class="empty" hidden>No open tasks from other users yet.</p>
+      </section>
+    </div>
+  </main>
+
+  <!-- SPACE -->
+  <main id="view-space" class="medium" hidden>
+    <button type="button" class="ghost small" id="btn-space-back">&larr; Back</button>
+    <section class="card">
+      <div class="space-head">
+        <div>
+          <div class="space-name" id="space-name"></div>
+          <div class="muted" id="space-meta"></div>
+        </div>
+        <div class="row-actions" id="space-actions"></div>
+      </div>
+      <p class="hint" id="space-relation"></p>
+    </section>
+    <section class="card">
+      <h2 id="space-tasks-title">Tasks</h2>
+      <ul id="space-tasks" class="task-list"></ul>
+      <p id="space-empty" class="empty" hidden>Nothing visible to you here.</p>
+    </section>
+  </main>
+
+  <!-- VIEWERS -->
+  <main id="view-viewers" hidden>
+    <div class="columns even">
+      <div class="stack">
+        <section class="card">
+          <h2>Viewer Access Requests</h2>
+          <h3>Received</h3>
+          <ul id="requests-in" class="people compact"></ul>
+          <p id="requests-in-empty" class="empty small">No pending requests.</p>
+          <h3>Sent</h3>
+          <ul id="requests-out" class="people compact"></ul>
+          <p id="requests-out-empty" class="empty small">You have not sent any requests.</p>
+        </section>
+
+        <section class="card">
+          <h2>Your Task Viewers</h2>
+          <p class="hint">People on this list can see your <b>Trusted</b> tasks. Adding someone is one-way.</p>
+          <form id="form-viewer" class="row">
+            <input name="username" placeholder="Add by username" aria-label="Username" required />
+            <button type="submit">Add</button>
+          </form>
+          <ul id="viewer-list" class="people compact"></ul>
+          <p id="viewer-empty" class="empty small">Nobody yet.</p>
+        </section>
+      </div>
+
+      <section class="card">
+        <h2>View Tasks</h2>
+        <p class="hint">People who added you to their Task Viewers. You can see their Trusted and Open tasks.</p>
+        <div id="viewtasks-list" class="stack"></div>
+        <p id="viewtasks-empty" class="empty">Nobody has added you yet. Send a Viewer Access Request from Discover.</p>
+      </section>
+    </div>
+  </main>
+
   <!-- ACCOUNT -->
   <main id="view-account" class="narrow" hidden>
+    <p id="username-notice" class="notice" hidden>Choose a username to finish setting up your account. Other users see your username, never your student ID.</p>
+
     <section class="card">
       <h2>Profile</h2>
       <form id="form-profile" class="form-group">
         <label>Student ID<input id="profile-id" disabled /></label>
         <label>Full name<input name="name" maxlength="100" required /></label>
-        <button type="submit">Save name</button>
+        <label>Username<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" title="3-30 letters, digits or _" required /></label>
+        <button type="submit">Save profile</button>
       </form>
+    </section>
+
+    <section class="card">
+      <h2>Space visibility</h2>
+      <div class="choice" role="radiogroup" aria-label="Space visibility">
+        <label class="option"><input type="radio" name="listed" value="true" /> <span><b>Listed</b> Shown in Discover. Anyone can open your Space and send you a Viewer Access Request.</span></label>
+        <label class="option"><input type="radio" name="listed" value="false" /> <span><b>Unlisted</b> Hidden from Discover. Your Open tasks still appear, marked "User is Unlisted".</span></label>
+      </div>
     </section>
 
     <section class="card">
@@ -150,7 +247,7 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Name</th><th>Student ID</th><th>Role</th><th>Tasks</th><th>Joined</th><th></th></tr>
+            <tr><th>Name</th><th>Username</th><th>Student ID</th><th>Role</th><th>Tasks</th><th>Joined</th><th></th></tr>
           </thead>
           <tbody id="user-rows"></tbody>
         </table>
@@ -165,6 +262,7 @@
         <div class="task-top">
           <span class="task-title"></span>
           <span class="pill priority"></span>
+          <span class="pill visibility"></span>
           <span class="pill due" hidden></span>
           <span class="pill owner" hidden></span>
         </div>
@@ -173,6 +271,22 @@
       <div class="task-actions">
         <button type="button" class="ghost small" data-action="edit">Edit</button>
         <button type="button" class="ghost small danger-text" data-action="delete">Delete</button>
+      </div>
+    </li>
+  </template>
+
+  <template id="tpl-shared-task">
+    <li class="task shared">
+      <span class="task-state" aria-hidden="true"></span>
+      <div class="task-body">
+        <div class="task-top">
+          <span class="task-title"></span>
+          <span class="pill priority"></span>
+          <span class="pill visibility"></span>
+          <span class="pill due" hidden></span>
+        </div>
+        <p class="task-desc" hidden></p>
+        <div class="task-owner" hidden></div>
       </div>
     </li>
   </template>
@@ -188,6 +302,11 @@
             <option value="low">Low</option>
             <option value="medium">Medium</option>
             <option value="high">High</option>
+          </select>
+          <select name="visibility" aria-label="Visibility">
+            <option value="only_me">Only Me</option>
+            <option value="trusted">Trusted</option>
+            <option value="open">Open</option>
           </select>
         </div>
         <div class="row end">

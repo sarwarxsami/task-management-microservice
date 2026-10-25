@@ -8,6 +8,9 @@ app.use(express.json({ limit: "20kb" }));
 const router = require("./routes/index.js");
 app.use("/service/user-service",router);
 
+// Internal API for other services; nginx only proxies /service/user-service
+app.use("/internal", require("./routes/internalRoutes"));
+
 app.use((req, res) => {
     res.status(404).json({ error: "Not found" });
 });

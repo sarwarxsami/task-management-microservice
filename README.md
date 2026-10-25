@@ -8,22 +8,19 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 ## Architecture
 
 ```
-internet
-    │
-    │ HTTPS :443 / HTTP :80
-    ▼
-Nginx (reverse proxy + SSL termination)
-    │                   │
-    │ /service/          │ /service/
-    │ user-service       │ task-service
-    ▼                   ▼
-user-service         task-service
-(Node.js :3000)      (Spring Boot :8080)
-    │                   │
-    └────────┬──────────┘
-             ▼
-        PostgreSQL
-      (single instance)
+                           internet
+                              │ HTTPS :443 / HTTP :80
+                              ▼
+        Nginx (reverse proxy + SSL termination + static frontend)
+          │                     │                       │
+ /service/user-service  /service/social-service  /service/task-service
+          ▼                     ▼                       ▼
+    user-service  ◄─────  social-service  ─────►  task-service
+   (Node.js :3000) /internal (Spring Boot :8080) /internal (Spring Boot :8080)
+          │                     │                       │
+          └─────────────────────┼───────────────────────┘
+                                ▼
+                    PostgreSQL (single instance)
 ```
 
 ---
@@ -35,6 +32,11 @@ user-service         task-service
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
 - **Organising** — summary counts (total, active, completed, due today, overdue), status filter (all / active / completed / overdue), search, sort by newest, deadline, priority or title, overdue and due-soon highlighting.
 - **Per-user view** — admins can switch between their own tasks, all tasks, or any single user's tasks, and assign new tasks to a user.
+- **Usernames** — every user has a unique public username, separate from their name and student ID.
+- **Task visibility** — each task is **Only Me** (default), **Trusted** or **Open**.
+- **Your Task Viewers / View Tasks** — choose who can see your Trusted tasks (one-way), and see the tasks of people who added you.
+- **Viewer Access Requests** — ask someone to add you to their Task Viewers; accept or decline requests you receive (with a badge for pending ones).
+- **Discover and Spaces** — browse Listed users and an Open Tasks feed, and open anyone's Space to see what they share. **Listed / Unlisted** controls whether you appear.
 
 ---
 
@@ -43,7 +45,7 @@ user-service         task-service
 All endpoints except `health`, `register` and `login` require `Authorization: Bearer <token>`.
 
 ### user-service — Node.js
-Owns users and authentication; issues HS256 JWTs (`sub` = student ID, `name`, `role`, 8h expiry). Login/register are rate-limited per client IP (20 failed attempts per 15 minutes).
+Owns users, usernames and authentication; issues HS256 JWTs (`sub` = student ID, `name`, `role`, 8h expiry). Login/register are rate-limited per client IP (20 failed attempts per 15 minutes).
 
 | Method | Endpoint | Access | Description |
 |---|---|---|---|
@@ -52,7 +54,7 @@ Owns users and authentication; issues HS256 JWTs (`sub` = student ID, `name`, `r
 | POST | `/service/user-service/auth/login` | public | Log in → `{ token, user }` |
 | GET | `/service/user-service/auth/me` | any user | Current user |
 | GET | `/service/user-service/users` | admin | List users |
-| PUT | `/service/user-service/users/:studentId` | owner or admin | Owner: `name`, `currentPassword` + `newPassword`. Admin: `name`, `role` |
+| PUT | `/service/user-service/users/:studentId` | owner or admin | Owner: `name`, `username`, `currentPassword` + `newPassword`. Admin: `name`, `username`, `role` |
 | DELETE | `/service/user-service/users/:studentId` | owner or admin | Delete user and (via cascade) their tasks |
 
 **POST** `/service/user-service/auth/register`
@@ -60,6 +62,7 @@ Owns users and authentication; issues HS256 JWTs (`sub` = student ID, `name`, `r
 {
     "name": "Sami Sarwar",
     "studentId": "12345",
+    "username": "sami",
     "password": "at-least-8-chars"
 }
 ```
@@ -76,7 +79,7 @@ Owns tasks; validates the JWT with Spring Security (OAuth2 resource server, shar
 | GET | `/service/task-service/health` | public | Health check |
 | GET | `/service/task-service/tasks?studentId=` | user: own / admin: any or all | List tasks |
 | POST | `/service/task-service/tasks` | any user | Create a task (admins may set `studentId`) |
-| PUT | `/service/task-service/tasks/:id` | owner or admin | Update title, description, deadline, priority |
+| PUT | `/service/task-service/tasks/:id` | owner or admin | Update title, description, deadline, priority, visibility |
 | PATCH | `/service/task-service/tasks/:id/status` | owner or admin | `{ "completed": true }` |
 | DELETE | `/service/task-service/tasks/:id` | owner or admin | Delete a task |
 | DELETE | `/service/task-service/tasks/completed` | any user | Delete own completed tasks |
@@ -87,7 +90,8 @@ Owns tasks; validates the JWT with Spring Security (OAuth2 resource server, shar
     "title": "Learn Docker",
     "description": "Multi-stage builds and compose",
     "deadline": "2026-11-30",
-    "priority": "high"
+    "priority": "high",
+    "visibility": "trusted"
 }
 ```
 
@@ -100,6 +104,7 @@ Owns tasks; validates the JWT with Spring Security (OAuth2 resource server, shar
     "description": "Multi-stage builds and compose",
     "deadline": "2026-11-30",
     "priority": "high",
+    "visibility": "trusted",
     "completed": false,
     "completedAt": null,
     "createdAt": "2026-10-25T20:03:28Z",
@@ -109,19 +114,63 @@ Owns tasks; validates the JWT with Spring Security (OAuth2 resource server, shar
 
 ---
 
+### social-service — Spring Boot (Java)
+Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides who may see which task. It validates the same JWT, and fetches names and tasks from user-service and task-service through their internal APIs.
+
+**Visibility rules**
+
+| Task visibility | Who can see it |
+|---|---|
+| Only Me (default) | the owner and admins |
+| Trusted | also everyone on the owner's **Your Task Viewers** list |
+| Open | every logged-in user |
+
+- **Listed** users appear in **Discover**; anyone can open their **Space** (username, name and the tasks they may see, read-only).
+- **Unlisted** users (the default) are hidden from Discover, their Space opens only for admins, and they cannot receive requests. Their Open tasks still appear in the Open Tasks feed, and they appear in **View Tasks**, as **"User is Unlisted"**.
+- Adding someone to Your Task Viewers is one-way. A **Viewer Access Request** asks someone to add you to theirs.
+- Other users see usernames, never student IDs; admins see everything.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/service/social-service/health` | Health check (public) |
+| GET / PUT | `/service/social-service/settings` | `{ "listed": true }` — Listed / Unlisted |
+| GET | `/service/social-service/discover` | Listed users and your relationship with each |
+| GET | `/service/social-service/open-tasks` | Open tasks of other users (owner hidden if Unlisted) |
+| GET | `/service/social-service/spaces/:username` | A user's Space with the tasks you may see |
+| GET | `/service/social-service/viewers` | Your Task Viewers |
+| POST | `/service/social-service/viewers` | `{ "username": "alice" }` — add a Listed user |
+| DELETE | `/service/social-service/viewers/:username` | Remove from Your Task Viewers |
+| GET | `/service/social-service/view-tasks` | People who added you, with their Trusted and Open tasks |
+| GET | `/service/social-service/requests` | Viewer Access Requests received and sent |
+| POST | `/service/social-service/requests` | `{ "username": "alice" }` — ask a Listed user to add you |
+| POST | `/service/social-service/requests/:id/accept` | Accept (adds the requester to Your Task Viewers) |
+| POST | `/service/social-service/requests/:id/decline` | Decline |
+| DELETE | `/service/social-service/requests/:id` | Cancel a request you sent |
+
+### Internal service-to-service API
+Not routed by Nginx (it only proxies `/service/<name>/...`) and protected by the shared `INTERNAL_API_KEY` header (`X-Internal-Key`).
+
+| Service | Endpoint | Used by |
+|---|---|---|
+| user-service | `GET /internal/users?ids=...&usernames=...` | social-service (names, usernames) |
+| task-service | `GET /internal/tasks?studentIds=...&visibilities=...` | social-service (Trusted / Open tasks) |
+
+---
+
 ## Tech Stack
 
 | Layer | Technology | Detail |
 |---|---|---|
 | user-service | Node.js (Express) | Users, authentication (bcrypt, JWT), rate limiting |
 | task-service | Spring Boot (Java) + Spring Security | Tasks API, JWT resource server |
-| Database | PostgreSQL | Single shared instance for both services |
+| social-service | Spring Boot (Java) + Spring Security, JDBC, RestClient | Visibility, task viewers, requests, Discover, Spaces |
+| Database | PostgreSQL | Single shared instance for all services |
 | Containerization | Docker | Each service runs in its own container |
 | Orchestration | Docker Compose | Manages all containers, networks, and volumes |
 | Reverse Proxy | Nginx | Single entry point, routes traffic to services |
 | SSL | Let's Encrypt (Certbot) | Free HTTPS certificate, auto-renewed |
 | CI/CD | GitHub Actions | Builds images, pushes to Docker Hub, deploys to EC2 |
-| Registry | Docker Hub | Stores built images for both services |
+| Registry | Docker Hub | Stores built images for all three services |
 | Cloud | AWS EC2 (Ubuntu) | Single VM running all containers |
 | Domain | Namecheap (.me) | Via GitHub Student Developer Pack |
 
@@ -132,15 +181,16 @@ Owns tasks; validates the JWT with Spring Security (OAuth2 resource server, shar
 - **Dockerized both services** — each service has a multi-stage Dockerfile: a builder stage compiles/installs, a runtime stage runs only the output as a non-root user.
 - **Multi-stage Docker builds** — builder stage uses full JDK/Node for compiling, runtime stage uses slim JRE/Node so production images carry no build tools or source code.
 - **Single PostgreSQL instance** — one database container shared across both services via Docker internal networking.
-- **Docker Compose orchestration** — all four containers (user-service, task-service, postgres, nginx) defined and managed in one `docker-compose.yml` with networks, volumes, pinned image versions, `restart: unless-stopped`, and healthchecks: services wait for a healthy Postgres, and deploys wait (`docker compose up --wait`) until both services report healthy.
-- **Custom Docker networks** — `user-net` connects user-service and postgres; `task-net` connects task-service and postgres; Nginx sits on both networks to reach all services.
+- **Docker Compose orchestration** — all five containers (user-service, task-service, social-service, postgres, nginx) defined and managed in one `docker-compose.yml` with networks, volumes, pinned image versions, `restart: unless-stopped`, and healthchecks: services wait for a healthy Postgres, and deploys wait (`docker compose up --wait`) until every service reports healthy.
+- **Custom Docker networks** — `user-net` connects user-service and postgres; `task-net` connects task-service and postgres; social-service and Nginx sit on both networks to reach the services they call.
+- **Service-to-service API** — social-service calls internal endpoints of user-service and task-service over the Docker network, authenticated with a shared `INTERNAL_API_KEY`; Nginx never routes `/internal/*`.
 - **Named volumes** — postgres data persisted in a named Docker volume so data survives container restarts.
-- **Environment variables via env\_file** — credentials are not hard-coded; Postgres and both services read from a `.env` file on the VM that is git-ignored and never baked into an image. `.env.example` lists the required keys (`DB_*`, `JWT_SECRET`, `ADMIN_STUDENT_IDS`).
-- **GitHub Actions CI/CD pipeline** — on every push to `main`, the workflow validates the compose and Nginx configs, runs both services' integration tests against a Postgres service container, builds both images and pushes them to Docker Hub tagged `latest` and the commit SHA, copies the compose file, Nginx config, SQL and frontend to the VM via SCP, runs `docker compose pull && docker compose up -d` with that SHA (no `down`, so no full outage), and finishes with a smoke test against the live HTTPS endpoints (health checks plus a check that protected endpoints reject anonymous requests).
-- **Docker Hub image registry** — built images stored at `sarwarxsami/task-service` and `sarwarxsami/user-service`. Every commit has its own tag, so rolling back is `IMAGE_TAG=<old-sha> docker compose up -d`.
+- **Environment variables via env\_file** — credentials are not hard-coded; Postgres and both services read from a `.env` file on the VM that is git-ignored and never baked into an image. `.env.example` lists the required keys (`DB_*`, `JWT_SECRET`, `INTERNAL_API_KEY`, `ADMIN_STUDENT_IDS`).
+- **GitHub Actions CI/CD pipeline** — on every push to `main`, the workflow validates the compose and Nginx configs, runs all three services' integration tests against a Postgres service container, builds all three images and pushes them to Docker Hub tagged `latest` and the commit SHA, copies the compose file, Nginx config, SQL and frontend to the VM via SCP, runs `docker compose pull && docker compose up -d` with that SHA (no `down`, so no full outage), and finishes with a smoke test against the live HTTPS endpoints (health checks plus a check that protected endpoints reject anonymous requests).
+- **Docker Hub image registry** — built images stored at `sarwarxsami/task-service`, `sarwarxsami/user-service` and `sarwarxsami/social-service`. Every commit has its own tag, so rolling back is `IMAGE_TAG=<old-sha> docker compose up -d`.
 - **SSH key-pair authentication** — dedicated ED25519 key pair generated for GitHub Actions; public key on the VM, private key stored as a GitHub Secret.
 - **GitHub Secrets** — Docker Hub credentials, VM IP, SSH username, and private key stored as encrypted secrets, never exposed in workflow logs.
-- **Nginx reverse proxy** — single Nginx container routes all traffic: `/service/user-service/*` → user-service, `/service/task-service/*` → task-service, `/` → static frontend. App services have no public ports.
+- **Nginx reverse proxy** — single Nginx container routes all traffic: `/service/user-service/*` → user-service, `/service/task-service/*` → task-service, `/service/social-service/*` → social-service, `/` → static frontend. App services have no public ports.
 - **HTTPS with Let's Encrypt** — Certbot issued a free SSL certificate for `task.sarwarxsami.me`; Nginx handles SSL termination; HTTP automatically redirects to HTTPS. Nginx serves `/.well-known/acme-challenge/` from `/var/www/certbot` so renewals work while it holds port 80 (see *Certificate renewal* below).
 - **Custom domain** — `sarwarxsami.me` registered free via GitHub Student Developer Pack on Namecheap; `task.sarwarxsami.me` subdomain pointed to EC2 via A record.
 - **EC2 Security Group firewall** — only ports 22 (SSH), 80 (HTTP), and 443 (HTTPS) open publicly; all app ports (3000, 8080, 5432) closed to the internet.
@@ -161,6 +211,9 @@ task-management-microservice/
 │   ├── Dockerfile
 │   └── src/
 ├── user-service/               # Node.js service
+│   ├── Dockerfile
+│   └── src/
+├── social-service/             # Spring Boot service (visibility, viewers, Discover)
 │   ├── Dockerfile
 │   └── src/
 ├── frontend/                   # Static frontend served by Nginx

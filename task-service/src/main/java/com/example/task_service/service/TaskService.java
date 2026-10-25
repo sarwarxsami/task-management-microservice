@@ -19,6 +19,7 @@ public class TaskService {
     }
 
     private static final Set<String> PRIORITIES = Set.of("low", "medium", "high");
+    public static final Set<String> VISIBILITIES = Set.of("only_me", "trusted", "open");
     private static final int MAX_TITLE = 200;
     private static final int MAX_DESCRIPTION = 2000;
 
@@ -79,6 +80,17 @@ public class TaskService {
         repository.delete(findOwned(caller, id));
     }
 
+    // Used by social-service, which decides who may see what
+    public List<Task> findForSharing(List<String> studentIds, List<String> visibilities) {
+        if (visibilities.isEmpty() || !VISIBILITIES.containsAll(visibilities)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid visibilities");
+        }
+        if (studentIds.isEmpty()) {
+            return repository.findByVisibilityInOrderByCreatedAtDescIdDesc(visibilities);
+        }
+        return repository.findByStudentIdInAndVisibilityInOrderByCreatedAtDescIdDesc(studentIds, visibilities);
+    }
+
     public long clearCompleted(Caller caller) {
         return repository.deleteByStudentIdAndCompletedTrue(caller.studentId());
     }
@@ -110,6 +122,12 @@ public class TaskService {
         task.setDescription(description == null || description.isEmpty() ? null : description);
         task.setDeadline(request.deadline());
         task.setPriority(priority);
+        if (request.visibility() != null) {
+            if (!VISIBILITIES.contains(request.visibility())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Visibility must be only_me, trusted or open");
+            }
+            task.setVisibility(request.visibility());
+        }
         if (request.completed() != null) {
             task.setCompleted(request.completed());
         }
