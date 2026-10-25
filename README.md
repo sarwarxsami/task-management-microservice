@@ -158,17 +158,18 @@ task-management-microservice/
 
 ## Certificate renewal
 
-Nginx owns port 80, so Certbot must use the webroot method instead of `--standalone`. One-time switch on the VM:
+Nginx owns port 80, so Certbot uses the webroot method (`authenticator = webroot`, `/var/www/certbot`) instead of `--standalone`; Nginx serves `/.well-known/acme-challenge/` from that directory. The `certbot.timer` on the VM renews automatically, and a deploy hook reloads Nginx with no downtime:
 
 ```bash
-sudo certbot certonly --webroot -w /var/www/certbot -d task.sarwarxsami.me --force-renewal
+# /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+#!/bin/sh
+docker exec nginx nginx -s reload
 ```
 
-Then add a deploy hook so Nginx picks up renewed certificates:
+Check renewal manually with:
 
 ```bash
-echo 'docker restart nginx' | sudo tee /etc/letsencrypt/renewal-hooks/deploy/restart-nginx.sh
-sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/restart-nginx.sh
+sudo certbot renew --dry-run --no-random-sleep-on-renew
 ```
 
 ---
