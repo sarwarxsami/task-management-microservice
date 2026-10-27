@@ -1555,8 +1555,7 @@ function closeTour() {
 // Finished or skipped: shown once per account, so it is recorded on the server
 async function finishTour() {
   closeTour();
-  await openView("tasks");
-
+  // recorded first, so closing the tab right after Done still counts
   if (!state.user.tourDone) {
     try {
       await api(`${USERS}/users/${encodeURIComponent(state.user.studentId)}/tour`, { method: "PUT" });
@@ -1565,6 +1564,7 @@ async function finishTour() {
       reportError(err);
     }
   }
+  await openView("tasks");
 }
 
 $("tour-next").addEventListener("click", () => showTourStep(tour.index + 1, 1));
