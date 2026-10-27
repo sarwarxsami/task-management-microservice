@@ -1150,6 +1150,11 @@ main.auth {
   box-shadow: 0 8px 30px rgb(0 0 0 / 0.5);
 }
 
+/* hidden until the first step has its page loaded and its text filled in */
+.tour-tip.waiting {
+  visibility: hidden;
+}
+
 .tour-tip h2 {
   color: var(--text);
   border-bottom: none;

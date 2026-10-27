@@ -1405,7 +1405,8 @@ const TOUR = [
   },
 ];
 
-const tour = { steps: [], index: 0, opened: new Set(), visibility: null };
+// busy: a step is loading its page; clicks and keys wait until it is shown
+const tour = { steps: [], index: 0, opened: new Set(), visibility: null, busy: false };
 
 function startTour() {
   // each step remembers the page of the step before it
@@ -1418,6 +1419,8 @@ function startTour() {
     });
   tour.index = 0;
   tour.opened = new Set();
+  tour.busy = false;
+  $("tour").querySelector(".tour-tip").classList.add("waiting");
   $("tour").hidden = false;
   window.addEventListener("resize", placeTour);
   window.addEventListener("scroll", placeTour, true);
@@ -1427,10 +1430,22 @@ function startTour() {
 
 // direction: 1 forward, -1 back; skips steps whose target cannot be shown
 async function showTourStep(index, direction) {
+  if (tour.busy) return;
+  tour.busy = true;
+  try {
+    await enterTourStep(index, direction);
+  } finally {
+    tour.busy = false;
+  }
+}
+
+async function enterTourStep(index, direction) {
   leaveTourStep();
   while (index >= 0 && index < tour.steps.length) {
     const step = tour.steps[index];
     if (state.view !== step.view) await openView(step.view);
+    // skipped or logged out while the page was loading
+    if ($("tour").hidden) return;
     for (const sel of step.open || []) {
       const box = document.querySelector(sel);
       if (box && !box.open) {
@@ -1463,6 +1478,7 @@ async function showTourStep(index, direction) {
   const target = step.target && document.querySelector(step.target);
   if (target) target.scrollIntoView({ block: "center", behavior: "instant" });
   placeTour();
+  $("tour").querySelector(".tour-tip").classList.remove("waiting");
   $("tour-next").focus();
 }
 
@@ -1520,6 +1536,7 @@ function placeTour() {
 }
 
 function tourKeys(e) {
+  if (tour.busy) return;
   if (e.key === "Escape") finishTour();
   else if (e.key === "ArrowRight") showTourStep(tour.index + 1, 1);
   else if (e.key === "ArrowLeft" && tour.index > 0) showTourStep(tour.index - 1, -1);
