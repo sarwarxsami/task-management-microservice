@@ -26,9 +26,9 @@
 
   <div id="toast" role="status" aria-live="polite" hidden></div>
 
-  <!-- AUTH -->
-  <main id="view-auth" class="narrow" hidden>
-    <section class="card">
+  <!-- AUTH: login card, what this place is, and how it works -->
+  <main id="view-auth" class="auth" hidden>
+    <section class="card auth-card">
       <div class="tabs" role="tablist">
         <button type="button" class="tab active" data-auth-tab="login">Log in</button>
         <button type="button" class="tab" data-auth-tab="register">Register</button>
@@ -45,9 +45,93 @@
         <label>Student ID<input name="studentId" maxlength="50" pattern="[A-Za-z0-9_\-]+" title="Letters, digits, - or _" autocomplete="username" required /></label>
         <label>Username<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" title="3-30 letters, digits or _" placeholder="shown to other users" required /></label>
         <label>Password<input name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required /></label>
+        <p class="hint">Your student ID is only for logging in and is never shown to anyone. Others only see your name and username.</p>
         <p class="hint">Already added before accounts existed? Register with your existing student ID to set a password.</p>
         <button type="submit">Create account</button>
       </form>
+
+      <p class="hint auth-note">New here? A short tour of every page starts after your first login.</p>
+    </section>
+
+    <section class="about">
+      <p class="eyebrow">anti-social by design</p>
+      <h1>A quiet place for your tasks.</h1>
+
+      <ul class="creed">
+        <li><b>Nothing calls you back.</b> No notifications, no emails, no reminders. Nothing from here reaches you when you are away.</li>
+        <li><b>Nobody talks here.</b> No messages, no comments, no likes, no followers, no "seen".</li>
+        <li><b>You write, and you let go.</b> You keep your tasks and choose who may see them. Whether anyone ever looks, you will never know.</li>
+        <li><b>So there is nothing to check.</b> No one returns to see who reacted. Everyone is on their own, together with everyone else.</li>
+        <li><b>Every visit is a choice.</b> Nothing pulls anyone in, so whoever is here came by themselves. If someone reads your task, they went looking for it, and that is what makes it count.</li>
+      </ul>
+
+      <section class="card manual">
+        <h2>How it works</h2>
+
+        <details class="fold sub">
+          <summary><h3>1 · Your tasks</h3></summary>
+          <div class="fold-body">
+            <p>Add a task with a title, and if you like a description, a deadline and a priority (low, medium, high). Tick the box when it is done; untick to reopen it.</p>
+            <p><b>Edit</b> and <b>Delete</b> sit on every task. <b>Clear completed</b> removes all your finished tasks at once.</p>
+            <p>The boxes on top count your tasks: total, active, completed, due today and overdue. Search, sort (newest, deadline, priority, title) and the All / Active / Completed / Overdue buttons help you find things. Overdue tasks are marked in red.</p>
+          </div>
+        </details>
+
+        <details class="fold sub">
+          <summary><h3>2 · Who can see a task</h3></summary>
+          <div class="fold-body">
+            <p>Every task has a visibility:</p>
+            <ul class="manual-list">
+              <li><b>Only Me</b> (the default): nobody else, ever.</li>
+              <li><b>Trusted</b>: people on Your Task Viewers list (see 3).</li>
+              <li><b>Open</b>: every logged-in user, in Discover and in your Space.</li>
+            </ul>
+            <p>A Trusted task can go further:</p>
+            <ul class="manual-list">
+              <li><b>All Trusted</b>: everyone on Your Task Viewers.</li>
+              <li><b>Hand-picked</b>: only the people you tick from that list.</li>
+              <li><b>Group</b>: everyone in the groups you tick, Default included.</li>
+            </ul>
+            <p>The <b>Who can see</b> button on a Trusted task lists exactly who that is right now. Nobody is told when you share something with them.</p>
+          </div>
+        </details>
+
+        <details class="fold sub">
+          <summary><h3>3 · Your Task Viewers and groups</h3></summary>
+          <div class="fold-body">
+            <p>On the <b>Viewers</b> page you choose the people who may see your Trusted tasks. Add a Listed user by username. It is one-way: adding someone does not let you see their tasks.</p>
+            <p>Sort them into groups with <b>Create group</b>, then <b>Add member</b>, <b>Rename</b> or <b>Delete</b>. A person can be in several groups; whoever is in none is in <b>Default</b>.</p>
+            <p>If you remove someone, they lose access at once, and deleting a group never shows a task to more people than before.</p>
+          </div>
+        </details>
+
+        <details class="fold sub">
+          <summary><h3>4 · Discover, Spaces and Listed / Unlisted</h3></summary>
+          <div class="fold-body">
+            <p>Every account starts <b>Unlisted</b>: hidden from Discover, with a Space only you can open. Switch to <b>Listed</b> in Account to appear in Discover and let others open your Space.</p>
+            <p><b>Discover</b> shows Listed people and a feed of Open tasks. Click a name to open their <b>Space</b>: their username, name and the tasks you are allowed to see. Everything there is read-only.</p>
+            <p>Open tasks of Unlisted people still appear, marked "User is Unlisted".</p>
+          </div>
+        </details>
+
+        <details class="fold sub">
+          <summary><h3>5 · Viewer Access Requests</h3></summary>
+          <div class="fold-body">
+            <p>Want to see someone's Trusted tasks? Send a <b>Viewer Access Request</b> from Discover or their Space. It carries no message. They can accept or decline, and you can cancel it.</p>
+            <p>Requests wait quietly on the Viewers page; the small number on the Viewers button is the only sign of them. Nothing is sent anywhere else.</p>
+            <p>Once accepted, their Trusted tasks shared with you show up under <b>View Tasks</b>.</p>
+          </div>
+        </details>
+
+        <details class="fold sub">
+          <summary><h3>6 · Your account and privacy</h3></summary>
+          <div class="fold-body">
+            <p>You log in with your student ID, which is never shown to anyone, admins included. Others only see your name and username.</p>
+            <p>In <b>Account</b> you can change your name, username and password, switch Listed / Unlisted, replay the tour, or delete your account with all of your tasks.</p>
+            <p>Admins can only see each account's name and username and delete accounts. They cannot read your tasks.</p>
+          </div>
+        </details>
+      </section>
     </section>
   </main>
 
@@ -62,7 +146,7 @@
     </section>
 
     <div class="columns">
-      <section class="card">
+      <section class="card" id="new-task-card">
         <h2>New task</h2>
         <form id="form-task" class="form-group">
           <label>Title<input name="title" maxlength="200" required placeholder="What needs doing?" /></label>
@@ -98,7 +182,7 @@
         </form>
       </section>
 
-      <section class="card">
+      <section class="card" id="tasks-card">
         <div class="card-head">
           <h2>My tasks</h2>
           <button type="button" class="ghost small" id="btn-clear-done">Clear completed</button>
@@ -130,7 +214,7 @@
   <!-- DISCOVER -->
   <main id="view-discover" hidden>
     <div class="columns even">
-      <details class="card fold">
+      <details class="card fold" id="discover-card">
         <summary>
           <h2>Discover</h2>
           <span class="hint" id="discover-count"></span>
@@ -142,7 +226,7 @@
         </div>
       </details>
 
-      <details class="card fold">
+      <details class="card fold" id="open-card">
         <summary>
           <h2>Open tasks</h2>
           <span class="hint" id="open-count"></span>
@@ -179,7 +263,7 @@
   <main id="view-viewers" hidden>
     <div class="columns even">
       <div class="stack">
-        <details class="card fold">
+        <details class="card fold" id="requests-card">
           <summary>
             <h2>Viewer Access Requests</h2>
             <span class="hint" id="requests-count"></span>
@@ -208,7 +292,7 @@
           </div>
         </details>
 
-        <details class="card fold">
+        <details class="card fold" id="viewers-card">
           <summary>
             <h2>Your Task Viewers</h2>
             <span class="hint" id="viewers-count"></span>
@@ -238,7 +322,7 @@
         </details>
       </div>
 
-      <details class="card fold">
+      <details class="card fold" id="viewtasks-card">
         <summary>
           <h2>View Tasks</h2>
           <span class="hint" id="viewtasks-count"></span>
@@ -256,7 +340,7 @@
   <main id="view-account" class="narrow" hidden>
     <p id="username-notice" class="notice" hidden>Choose a username to finish setting up your account. Other users see your username, never your student ID.</p>
 
-    <section class="card">
+    <section class="card" id="profile-card">
       <h2>Profile</h2>
       <form id="form-profile" class="form-group">
         <label>Student ID<input id="profile-id" disabled /></label>
@@ -266,7 +350,7 @@
       </form>
     </section>
 
-    <section class="card">
+    <section class="card" id="listed-card">
       <h2>Space visibility</h2>
       <div class="choice" role="radiogroup" aria-label="Space visibility">
         <label class="option"><input type="radio" name="listed" value="true" /> <span><b>Listed</b> Shown in Discover. Anyone can open your Space and send you a Viewer Access Request.</span></label>
@@ -274,7 +358,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" id="password-card">
       <h2>Change password</h2>
       <form id="form-password" class="form-group">
         <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
@@ -283,7 +367,13 @@
       </form>
     </section>
 
-    <section class="card danger-zone">
+    <section class="card" id="tour-card">
+      <h2>Tour</h2>
+      <p class="hint">A walk through every page and button, like the one after your first login.</p>
+      <button type="button" class="ghost" id="btn-tour">Show the tour again</button>
+    </section>
+
+    <section class="card danger-zone" id="delete-card">
       <h2>Delete account</h2>
       <p class="hint">Permanently deletes your account and all of your tasks.</p>
       <button type="button" class="danger" id="btn-delete-account">Delete my account</button>
@@ -292,7 +382,7 @@
 
   <!-- ADMIN -->
   <main id="view-admin" hidden>
-    <section class="card">
+    <section class="card" id="users-card">
       <div class="card-head">
         <h2>Users</h2>
         <span class="hint" id="admin-count"></span>
@@ -404,6 +494,22 @@
       <button type="button" class="small" id="who-close">Close</button>
     </div>
   </dialog>
+
+  <!-- First-login tour: dims the page, outlines one thing at a time and explains it -->
+  <div id="tour" hidden>
+    <div class="tour-spot" aria-hidden="true"></div>
+    <section class="tour-tip card" role="dialog" aria-modal="true" aria-labelledby="tour-title">
+      <span class="hint" id="tour-step"></span>
+      <h2 id="tour-title"></h2>
+      <p id="tour-text"></p>
+      <div class="picker-foot">
+        <button type="button" class="ghost small" id="tour-skip">Skip tour</button>
+        <span class="hint"></span>
+        <button type="button" class="ghost small" id="tour-back">Back</button>
+        <button type="button" class="small" id="tour-next">Next</button>
+      </div>
+    </section>
+  </div>
 
   <script src="app.js"></script>
 </body>

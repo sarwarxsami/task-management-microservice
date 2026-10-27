@@ -140,3 +140,6 @@ CREATE TABLE IF NOT EXISTS task_audience_groups (
     group_id INT NOT NULL REFERENCES viewer_groups(id) ON DELETE CASCADE,
     PRIMARY KEY (task_id, group_id)
 );
+
+-- user-service: when the user finished or skipped the first-login tour (NULL = show it)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tour_done_at TIMESTAMPTZ;

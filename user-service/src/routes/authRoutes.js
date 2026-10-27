@@ -18,7 +18,13 @@ const authLimiter = rateLimit({
 const USERNAME_TAKEN = "users_username_key";
 
 function publicUser(row) {
-    return { name: row.name, studentId: row.student_id, username: row.username, role: row.role };
+    return {
+        name: row.name,
+        studentId: row.student_id,
+        username: row.username,
+        role: row.role,
+        tourDone: row.tour_done_at != null,
+    };
 }
 
 // Keeps the stored role in step with ADMIN_STUDENT_IDS, promoting and demoting
@@ -53,7 +59,7 @@ router.post("/register", authLimiter, async (req, res) => {
              ON CONFLICT (student_id) DO UPDATE
                  SET name = EXCLUDED.name, username = EXCLUDED.username, password_hash = EXCLUDED.password_hash
                  WHERE users.password_hash IS NULL
-             RETURNING name, student_id, username, role`,
+             RETURNING name, student_id, username, role, tour_done_at`,
             [name.trim(), studentId, username, hash]
         );
     } catch (error) {
@@ -80,7 +86,7 @@ router.post("/login", authLimiter, async (req, res) => {
     }
 
     const result = await pool.query(
-        "SELECT name, student_id, username, role, password_hash FROM users WHERE student_id = $1",
+        "SELECT name, student_id, username, role, tour_done_at, password_hash FROM users WHERE student_id = $1",
         [studentId]
     );
     const user = result.rows[0];
@@ -96,7 +102,7 @@ router.post("/login", authLimiter, async (req, res) => {
 // GET /service/user-service/auth/me
 router.get("/me", requireAuth, async (req, res) => {
     const result = await pool.query(
-        "SELECT name, student_id, username, role FROM users WHERE student_id = $1",
+        "SELECT name, student_id, username, role, tour_done_at FROM users WHERE student_id = $1",
         [req.user.studentId]
     );
 

@@ -94,6 +94,18 @@ router.put("/:studentId", requireSelf, async (req, res) => {
     return res.json({ name: row.name, studentId: row.student_id, username: row.username, role: row.role });
 });
 
+// PUT /service/user-service/users/:studentId/tour (owner): the first-login tour was finished or skipped
+router.put("/:studentId/tour", requireSelf, async (req, res) => {
+    const result = await pool.query(
+        "UPDATE users SET tour_done_at = COALESCE(tour_done_at, now()) WHERE student_id = $1 RETURNING student_id",
+        [req.params.studentId]
+    );
+    if (result.rows.length === 0) {
+        return res.status(404).json({ error: "User not found" });
+    }
+    return res.status(204).end();
+});
+
 // DELETE /service/user-service/users/:studentId (owner; tasks cascade)
 router.delete("/:studentId", requireSelf, async (req, res) => {
     const result = await pool.query(

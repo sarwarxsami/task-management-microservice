@@ -27,6 +27,8 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 
 ## Features
 
+- **Anti-social by design** — no notifications, messages, likes or "seen": you keep your tasks, choose who may see them, and never learn whether anyone did. The login page explains this idea next to the login card, with a **How it works** manual in six dropdown sections.
+- **First-login tour** — after a user's first login, a step-by-step tour outlines every page, button and section and explains it (Next / Back / Skip, arrow keys, Esc). It is shown once per account (stored on the server) and can be replayed from Account.
 - **Accounts** — register / log in with student ID and password (bcrypt-hashed), JWT sessions, change name and password, delete own account.
 - **Roles** — everyone, admins included, manages only their own tasks. An `admin` additionally sees every account's name and username and can delete accounts; nothing else (no student IDs, no other users' tasks, no renaming or role changes). Admins are exactly the student IDs in `ADMIN_STUDENT_IDS`, checked on every request.
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
@@ -59,6 +61,7 @@ The token carries no role. Admin rights are read from `ADMIN_STUDENT_IDS` on eve
 | DELETE | `/service/user-service/users/by-id/:id` | admin | Delete a user (by the `id` from the list) and, via cascade, their tasks |
 | PUT | `/service/user-service/users/:studentId` | owner | `name`, `username`, `currentPassword` + `newPassword`. Roles cannot be changed |
 | DELETE | `/service/user-service/users/:studentId` | owner | Delete own account and (via cascade) own tasks |
+| PUT | `/service/user-service/users/:studentId/tour` | owner | Mark the first-login tour as finished or skipped (`tourDone` in the user object) |
 
 **POST** `/service/user-service/auth/register`
 ```json

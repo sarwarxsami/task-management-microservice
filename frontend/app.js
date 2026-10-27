@@ -152,6 +152,7 @@ function saveSession(token, user) {
 }
 
 function logout(message) {
+  closeTour();
   state.token = null;
   state.user = null;
   state.tasks = [];
@@ -177,6 +178,7 @@ async function startSession(restore = false) {
   }
   const last = restore ? store.get("tms.view") : null;
   await openView(["discover", "viewers"].includes(last) || (last === "admin" && isAdmin()) ? last : "tasks");
+  if (!state.user.tourDone) startTour();
 }
 
 const LOADERS = {
@@ -758,10 +760,14 @@ async function updateSelf(body, message) {
 $("form-profile").addEventListener("submit", (e) => {
   e.preventDefault();
   const form = e.currentTarget;
-  withBusy(form, () => updateSelf({
-    name: form.elements.name.value,
-    username: form.elements.username.value,
-  }, "Profile updated"));
+  withBusy(form, async () => {
+    const hadUsername = Boolean(state.user.username);
+    await updateSelf({
+      name: form.elements.name.value,
+      username: form.elements.username.value,
+    }, "Profile updated");
+    if (!hadUsername && !state.user.tourDone) startTour();
+  });
 });
 
 async function loadSettings() {
@@ -1274,6 +1280,280 @@ $("form-viewer").addEventListener("submit", (e) => {
     await loadViewers();
   });
 });
+
+// ---------- first-login tour ----------
+// One step per button or section. view: page to show (kept for the following steps); open: dropdowns to open first;
+// admin: admins only. Steps whose target is missing or hidden are skipped.
+
+const TOUR = [
+  {
+    view: "tasks",
+    title: "Welcome",
+    text: "A short walk through every page and button. Use Next and Back, or skip it. You can replay it anytime from Account.",
+  },
+  { target: '#nav [data-view="tasks"]', title: "Tasks", text: "Your own tasks. Every visit starts here." },
+  { target: '#nav [data-view="discover"]', title: "Discover", text: "Listed people, and everyone's Open tasks." },
+  {
+    target: '#nav [data-view="viewers"]',
+    title: "Viewers",
+    text: "Who may see your Trusted tasks, your groups, Viewer Access Requests, and tasks others share with you. A small number here means requests are waiting. It is the only sign: nothing is ever sent to you anywhere else.",
+  },
+  {
+    target: '#nav [data-view="account"]',
+    title: "Account",
+    text: "Your name, username and password, Listed or Unlisted, this tour, and deleting your account.",
+  },
+  {
+    target: "#nav-admin",
+    admin: true,
+    title: "Users (admins only)",
+    text: "The name and username of every account, with Delete. Admins cannot see anyone's tasks or student IDs.",
+  },
+  { target: "#btn-logout", title: "Log out", text: "Ends your session on this device." },
+  {
+    target: "#view-tasks .stats",
+    title: "Summary",
+    text: "Counts of your tasks: total, active, completed, due today and overdue.",
+  },
+  {
+    target: "#new-task-card",
+    title: "New task",
+    text: "Give it a title. Description, deadline and priority are optional. Add task saves it.",
+  },
+  {
+    target: '#form-task [name="visibility"]',
+    title: "Visibility",
+    text: "Only Me keeps a task to yourself (the default). Trusted shows it to people on Your Task Viewers. Open shows it to everyone.",
+  },
+  {
+    target: "#form-task .audience",
+    trusted: true,
+    title: "All Trusted, Hand-picked, Group",
+    text: "Appears when you choose Trusted. All Trusted: everyone on Your Task Viewers. Hand-picked: only the people you tick. Group: everyone in the groups you tick, Default included.",
+  },
+  {
+    target: "#tasks-card .toolbar",
+    title: "Search and sort",
+    text: "Find a task by its words, and sort by newest, deadline, priority or title.",
+  },
+  {
+    target: "#tasks-card .segmented",
+    title: "Filters",
+    text: "Show all tasks, or only the active, completed or overdue ones.",
+  },
+  {
+    target: "#tasks-card",
+    title: "Your task list",
+    text: "Each task has a box to tick when it is done, Edit and Delete. Trusted tasks also have Who can see, listing exactly who that is right now. Clear completed removes all finished tasks at once.",
+  },
+  {
+    view: "discover",
+    target: "#discover-card",
+    open: ["#discover-card"],
+    title: "Discover",
+    text: "Listed people. Search by name or username, click a name to open their Space, add them to your viewers, or send a Viewer Access Request.",
+  },
+  {
+    target: "#open-card",
+    open: ["#open-card"],
+    title: "Open tasks",
+    text: "Other people's Open tasks, newest first. Owners who are Unlisted show as \"User is Unlisted\".",
+  },
+  {
+    view: "viewers",
+    target: "#requests-card",
+    open: ["#requests-card"],
+    title: "Viewer Access Requests",
+    text: "Received: people asking to see your Trusted tasks; accept or decline. Sent: your own requests; cancel them anytime. A request carries no message.",
+  },
+  {
+    target: "#viewers-card > summary",
+    open: ["#viewers-card"],
+    title: "Your Task Viewers",
+    text: "The people who may see your Trusted tasks. Add them by username; it is one-way. All viewers lists everyone, with Remove.",
+  },
+  {
+    target: "#form-new-group",
+    open: ["#viewers-card"],
+    title: "Groups",
+    text: "Create a group, then open it to Add member, Rename or Delete. A person can be in several groups; whoever is in none is in Default.",
+  },
+  {
+    target: "#viewtasks-card",
+    open: ["#viewtasks-card"],
+    title: "View Tasks",
+    text: "People who added you to their viewers, with the Trusted and Open tasks they let you see. They are never told whether you looked.",
+  },
+  {
+    view: "account",
+    target: "#profile-card",
+    title: "Profile",
+    text: "Change your name and username. Your student ID is only for logging in and is never shown to others.",
+  },
+  {
+    target: "#listed-card",
+    title: "Space visibility",
+    text: "Listed: you appear in Discover and others can open your Space. Unlisted (the default): hidden, and your Space opens only for you.",
+  },
+  { target: "#password-card", title: "Change password", text: "Needs your current password." },
+  { target: "#tour-card", title: "Tour", text: "Replay this tour whenever you like." },
+  { target: "#delete-card", title: "Delete account", text: "Removes your account and all of your tasks for good." },
+  {
+    view: "tasks",
+    title: "That's all",
+    text: "Nothing here will call you back. Come when you want to, share what you like, and let it be. Whoever finds it came by themselves.",
+  },
+];
+
+const tour = { steps: [], index: 0, opened: new Set(), visibility: null };
+
+function startTour() {
+  // each step remembers the page of the step before it
+  let view = "tasks";
+  tour.steps = TOUR
+    .filter((step) => !step.admin || isAdmin())
+    .map((step) => {
+      view = step.view || view;
+      return { ...step, view };
+    });
+  tour.index = 0;
+  tour.opened = new Set();
+  $("tour").hidden = false;
+  window.addEventListener("resize", placeTour);
+  window.addEventListener("scroll", placeTour, true);
+  document.addEventListener("keydown", tourKeys);
+  showTourStep(0, 1);
+}
+
+// direction: 1 forward, -1 back; skips steps whose target cannot be shown
+async function showTourStep(index, direction) {
+  leaveTourStep();
+  while (index >= 0 && index < tour.steps.length) {
+    const step = tour.steps[index];
+    if (state.view !== step.view) await openView(step.view);
+    for (const sel of step.open || []) {
+      const box = document.querySelector(sel);
+      if (box && !box.open) {
+        box.open = true;
+        tour.opened.add(box);
+      }
+    }
+    if (step.trusted) {
+      const select = $("form-task").elements.visibility;
+      tour.visibility = select.value;
+      select.value = "trusted";
+      select.dispatchEvent(new Event("change"));
+    }
+    const target = step.target && document.querySelector(step.target);
+    if (!step.target || (target && target.checkVisibility())) break;
+    leaveTourStep();
+    index += direction;
+  }
+  if (index < 0) index = 0;
+  if (index >= tour.steps.length) return finishTour();
+
+  tour.index = index;
+  const step = tour.steps[index];
+  $("tour-step").textContent = `${index + 1} / ${tour.steps.length}`;
+  $("tour-title").textContent = step.title;
+  $("tour-text").textContent = step.text;
+  $("tour-back").disabled = index === 0;
+  $("tour-next").textContent = index === tour.steps.length - 1 ? "Done" : "Next";
+
+  const target = step.target && document.querySelector(step.target);
+  if (target) target.scrollIntoView({ block: "center", behavior: "instant" });
+  placeTour();
+  $("tour-next").focus();
+}
+
+// undoes what a step changed on the page (the Trusted choice shown for the audience step)
+function leaveTourStep() {
+  if (tour.visibility !== null) {
+    const select = $("form-task").elements.visibility;
+    select.value = tour.visibility;
+    select.dispatchEvent(new Event("change"));
+    tour.visibility = null;
+  }
+}
+
+// Outlines the target and puts the explanation below it, above it, or at the bottom of the screen
+function placeTour() {
+  const step = tour.steps[tour.index];
+  if ($("tour").hidden || !step) return;
+  const spot = $("tour").querySelector(".tour-spot");
+  const tip = $("tour").querySelector(".tour-tip");
+  const target = step.target && document.querySelector(step.target);
+  const pad = 6;
+  const gap = 12;
+  const margin = 12;
+
+  if (!target) {
+    spot.classList.add("none");
+    Object.assign(spot.style, { top: "50%", left: "50%", width: "0px", height: "0px" });
+    tip.style.left = `${(window.innerWidth - tip.offsetWidth) / 2}px`;
+    tip.style.top = `${(window.innerHeight - tip.offsetHeight) / 2}px`;
+    return;
+  }
+
+  const r = target.getBoundingClientRect();
+  const top = Math.max(r.top - pad, 4);
+  const left = Math.max(r.left - pad, 4);
+  const bottom = Math.min(r.bottom + pad, window.innerHeight - 4);
+  const right = Math.min(r.right + pad, window.innerWidth - 4);
+  spot.classList.remove("none");
+  Object.assign(spot.style, {
+    top: `${top}px`,
+    left: `${left}px`,
+    width: `${Math.max(right - left, 0)}px`,
+    height: `${Math.max(bottom - top, 0)}px`,
+  });
+
+  const h = tip.offsetHeight;
+  const w = tip.offsetWidth;
+  let y;
+  if (bottom + gap + h <= window.innerHeight - margin) y = bottom + gap;
+  else if (top - gap - h >= margin) y = top - gap - h;
+  else y = window.innerHeight - h - margin;
+  const x = Math.min(Math.max(left, margin), window.innerWidth - w - margin);
+  tip.style.top = `${y}px`;
+  tip.style.left = `${x}px`;
+}
+
+function tourKeys(e) {
+  if (e.key === "Escape") finishTour();
+  else if (e.key === "ArrowRight") showTourStep(tour.index + 1, 1);
+  else if (e.key === "ArrowLeft" && tour.index > 0) showTourStep(tour.index - 1, -1);
+}
+
+function closeTour() {
+  leaveTourStep();
+  $("tour").hidden = true;
+  window.removeEventListener("resize", placeTour);
+  window.removeEventListener("scroll", placeTour, true);
+  document.removeEventListener("keydown", tourKeys);
+  tour.opened.forEach((box) => { box.open = false; });
+  tour.opened.clear();
+}
+
+// Finished or skipped: shown once per account, so it is recorded on the server
+async function finishTour() {
+  closeTour();
+  await openView("tasks");
+
+  if (!state.user.tourDone) {
+    try {
+      await api(`${USERS}/users/${encodeURIComponent(state.user.studentId)}/tour`, { method: "PUT" });
+      state.user.tourDone = true;
+    } catch (err) {
+      reportError(err);
+    }
+  }
+}
+
+$("tour-next").addEventListener("click", () => showTourStep(tour.index + 1, 1));
+$("tour-back").addEventListener("click", () => showTourStep(tour.index - 1, -1));
+$("tour-skip").addEventListener("click", () => finishTour());
+$("btn-tour").addEventListener("click", () => startTour());
 
 // ---------- boot ----------
 
