@@ -122,21 +122,28 @@
   <!-- DISCOVER -->
   <main id="view-discover" hidden>
     <div class="columns even">
-      <section class="card">
-        <div class="card-head">
+      <details class="card fold">
+        <summary>
           <h2>Discover</h2>
           <span class="hint" id="discover-count"></span>
+        </summary>
+        <div class="fold-body">
+          <input id="discover-search" type="search" placeholder="Search by name or username..." aria-label="Search people" />
+          <ul id="people-list" class="people"></ul>
+          <p id="people-empty" class="empty" hidden>No listed users yet.</p>
         </div>
-        <input id="discover-search" type="search" placeholder="Search by name or username..." aria-label="Search people" />
-        <ul id="people-list" class="people"></ul>
-        <p id="people-empty" class="empty" hidden>No listed users yet.</p>
-      </section>
+      </details>
 
-      <section class="card">
-        <h2>Open tasks</h2>
-        <ul id="open-list" class="task-list"></ul>
-        <p id="open-empty" class="empty" hidden>No open tasks from other users yet.</p>
-      </section>
+      <details class="card fold">
+        <summary>
+          <h2>Open tasks</h2>
+          <span class="hint" id="open-count"></span>
+        </summary>
+        <div class="fold-body">
+          <ul id="open-list" class="task-list"></ul>
+          <p id="open-empty" class="empty" hidden>No open tasks from other users yet.</p>
+        </div>
+      </details>
     </div>
   </main>
 
@@ -164,34 +171,63 @@
   <main id="view-viewers" hidden>
     <div class="columns even">
       <div class="stack">
-        <section class="card">
-          <h2>Viewer Access Requests</h2>
-          <h3>Received</h3>
-          <ul id="requests-in" class="people compact"></ul>
-          <p id="requests-in-empty" class="empty small">No pending requests.</p>
-          <h3>Sent</h3>
-          <ul id="requests-out" class="people compact"></ul>
-          <p id="requests-out-empty" class="empty small">You have not sent any requests.</p>
-        </section>
+        <details class="card fold">
+          <summary>
+            <h2>Viewer Access Requests</h2>
+            <span class="hint" id="requests-count"></span>
+          </summary>
+          <div class="fold-body">
+            <details class="fold sub">
+              <summary>
+                <h3>Received</h3>
+                <span class="hint" id="requests-in-count"></span>
+              </summary>
+              <div class="fold-body">
+                <ul id="requests-in" class="people compact"></ul>
+                <p id="requests-in-empty" class="empty small">No pending requests.</p>
+              </div>
+            </details>
+            <details class="fold sub">
+              <summary>
+                <h3>Sent</h3>
+                <span class="hint" id="requests-out-count"></span>
+              </summary>
+              <div class="fold-body">
+                <ul id="requests-out" class="people compact"></ul>
+                <p id="requests-out-empty" class="empty small">You have not sent any requests.</p>
+              </div>
+            </details>
+          </div>
+        </details>
 
-        <section class="card">
-          <h2>Your Task Viewers</h2>
-          <p class="hint">People on this list can see your <b>Trusted</b> tasks. Adding someone is one-way.</p>
-          <form id="form-viewer" class="row">
-            <input name="username" placeholder="Add by username" aria-label="Username" required />
-            <button type="submit">Add</button>
-          </form>
-          <ul id="viewer-list" class="people compact"></ul>
-          <p id="viewer-empty" class="empty small">Nobody yet.</p>
-        </section>
+        <details class="card fold">
+          <summary>
+            <h2>Your Task Viewers</h2>
+            <span class="hint" id="viewers-count"></span>
+          </summary>
+          <div class="fold-body">
+            <p class="hint">People on this list can see your <b>Trusted</b> tasks. Adding someone is one-way.</p>
+            <form id="form-viewer" class="row">
+              <input name="username" placeholder="Add by username" aria-label="Username" required />
+              <button type="submit">Add</button>
+            </form>
+            <ul id="viewer-list" class="people compact"></ul>
+            <p id="viewer-empty" class="empty small">Nobody yet.</p>
+          </div>
+        </details>
       </div>
 
-      <section class="card">
-        <h2>View Tasks</h2>
-        <p class="hint">People who added you to their Task Viewers. You can see their Trusted and Open tasks.</p>
-        <div id="viewtasks-list" class="stack"></div>
-        <p id="viewtasks-empty" class="empty">Nobody has added you yet. Send a Viewer Access Request from Discover.</p>
-      </section>
+      <details class="card fold">
+        <summary>
+          <h2>View Tasks</h2>
+          <span class="hint" id="viewtasks-count"></span>
+        </summary>
+        <div class="fold-body">
+          <p class="hint">People who added you to their Task Viewers. You can see their Trusted and Open tasks.</p>
+          <div id="viewtasks-list" class="stack"></div>
+          <p id="viewtasks-empty" class="empty">Nobody has added you yet. Send a Viewer Access Request from Discover.</p>
+        </div>
+      </details>
     </div>
   </main>
 

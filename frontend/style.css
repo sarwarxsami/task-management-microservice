@@ -815,6 +815,84 @@ button.link:disabled {
   width: auto;
 }
 
+/* ---------- dropdown sections (closed until clicked) ---------- */
+
+/* block, not flex: a closed section shrinks to its header */
+details.fold {
+  display: block;
+}
+
+details.fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+details.fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.fold > summary h2 {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* count on the right, then the arrow */
+details.fold > summary .hint {
+  margin-left: auto;
+}
+
+details.fold > summary::after {
+  content: "\25B8";
+  color: var(--muted);
+}
+
+details.fold[open] > summary::after {
+  content: "\25BE";
+}
+
+details.fold[open] > summary {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+details.fold > summary:hover h2,
+details.fold > summary:hover h3,
+details.fold > summary:hover::after {
+  color: var(--text);
+}
+
+details.fold > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+/* nested dropdowns inside a card */
+details.fold.sub[open] > summary {
+  padding-bottom: 6px;
+}
+
+details.fold.sub > .fold-body {
+  gap: 10px;
+  margin-top: 10px;
+}
+
+details.fold.owner-group > summary {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
 /* data is refreshing in the background */
 main.loading {
   opacity: 0.7;

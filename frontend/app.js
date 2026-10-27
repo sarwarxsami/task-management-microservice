@@ -679,6 +679,10 @@ function relationButtons(person, rel, refresh) {
   return buttons;
 }
 
+function plural(n, word, many = `${word}s`) {
+  return `${n} ${n === 1 ? word : many}`;
+}
+
 function relationText(rel) {
   const parts = [];
   if (rel.addedMe) parts.push("You can view their Trusted tasks");
@@ -709,6 +713,7 @@ async function loadDiscover() {
   state.people = people;
   renderPeople();
 
+  $("open-count").textContent = plural(open.length, "task");
   $("open-list").replaceChildren(...open.map((o) => renderSharedTask(o.task, o.owner)));
   $("open-empty").hidden = open.length > 0;
 }
@@ -797,6 +802,12 @@ async function loadViewers() {
   badge.textContent = requests.incoming.length;
   badge.hidden = requests.incoming.length === 0;
 
+  $("requests-count").textContent = `${requests.incoming.length} received · ${requests.outgoing.length} sent`;
+  $("requests-in-count").textContent = requests.incoming.length;
+  $("requests-out-count").textContent = requests.outgoing.length;
+  $("viewers-count").textContent = plural(viewers.length, "person", "people");
+  $("viewtasks-count").textContent = plural(viewTasks.length, "person", "people");
+
   $("requests-in").replaceChildren(...requests.incoming.map((r) => {
     const li = el("li", "person-card");
     const info = el("div", "person-info");
@@ -847,14 +858,20 @@ async function loadViewers() {
   }));
   $("viewer-empty").hidden = viewers.length > 0;
 
-  $("viewtasks-list").replaceChildren(...viewTasks.map((entry) => {
-    const group = el("div", "owner-group");
-    const head = el("div", "owner-head");
-    head.append(personLink(entry.owner), el("span", "hint", `${entry.tasks.length} task${entry.tasks.length === 1 ? "" : "s"}`));
+  // one dropdown per person; the ones already open stay open after a refresh
+  const opened = new Set([...$("viewtasks-list").querySelectorAll("details[open]")].map((d) => d.dataset.key));
+  $("viewtasks-list").replaceChildren(...viewTasks.map((entry, i) => {
+    const group = el("details", "fold sub owner-group");
+    group.dataset.key = entry.owner?.username ?? `unlisted-${i}`;
+    group.open = opened.has(group.dataset.key);
+    const head = el("summary");
+    head.append(personLink(entry.owner), el("span", "hint", plural(entry.tasks.length, "task")));
     const list = el("ul", "task-list");
     list.append(...entry.tasks.map((t) => renderSharedTask(t)));
     if (entry.tasks.length === 0) list.append(el("li", "empty small", `${personName(entry.owner)} has no Trusted or Open tasks.`));
-    group.append(head, list);
+    const body = el("div", "fold-body");
+    body.append(list);
+    group.append(head, body);
     return group;
   }));
   $("viewtasks-empty").hidden = viewTasks.length > 0;
