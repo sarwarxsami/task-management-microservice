@@ -187,10 +187,19 @@ public class SocialService {
         return links.stream()
                 .filter(l -> info.containsKey(l.studentId()))
                 .map(l -> new ViewTasksEntry(
+                        l.id(),
                         visiblePerson(info.get(l.studentId()), listed.contains(l.studentId())),
                         l.createdAt(),
                         byOwner.getOrDefault(l.studentId(), List.of())))
                 .toList();
+    }
+
+    // Take myself off someone's Your Task Viewers (and so out of their groups). They are not told.
+    @Transactional
+    public void leave(Caller caller, int linkId) {
+        String ownerId = repo.leave(linkId, caller.studentId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "You are not on that list"));
+        repo.removeFromAllGroups(ownerId, caller.studentId());
     }
 
     // ---- Viewer Access Requests ----

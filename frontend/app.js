@@ -1133,17 +1133,27 @@ async function loadViewers() {
 
   // one dropdown per person; the ones already open stay open after a refresh
   const opened = new Set([...$("viewtasks-list").querySelectorAll("details[open]")].map((d) => d.dataset.key));
-  $("viewtasks-list").replaceChildren(...viewTasks.map((entry, i) => {
+  $("viewtasks-list").replaceChildren(...viewTasks.map((entry) => {
     const group = el("details", "fold sub owner-group");
-    group.dataset.key = entry.owner?.username ?? `unlisted-${i}`;
+    group.dataset.key = `link-${entry.id}`;
     group.open = opened.has(group.dataset.key);
     const head = el("summary");
     head.append(personLink(entry.owner), el("span", "hint", plural(entry.tasks.length, "task")));
     const list = el("ul", "task-list");
     list.append(...entry.tasks.map((t) => renderSharedTask(t)));
     if (entry.tasks.length === 0) list.append(el("li", "empty small", `${personName(entry.owner)} has no Trusted or Open tasks.`));
+    // leaving is silent like everything else here; they can still add you again
+    const leave = button("Leave their list", "ghost small danger-text", async () => {
+      const who = entry.owner ? entry.owner.name : "this person";
+      if (!confirm(`Leave ${who}'s Task Viewers? You will no longer see their Trusted tasks. They are not told, and they can add you again.`)) return;
+      await api(`${SOCIAL}/view-tasks/${entry.id}`, { method: "DELETE" });
+      toast(entry.owner ? `You left ${entry.owner.name}'s Task Viewers` : "You left their Task Viewers");
+      await reload();
+    });
+    const actions = el("div", "row-actions start");
+    actions.append(leave);
     const body = el("div", "fold-body");
-    body.append(list);
+    body.append(list, actions);
     group.append(head, body);
     return group;
   }));
@@ -1394,7 +1404,7 @@ const TOURS = {
       target: "#viewtasks-card",
       open: ["#viewtasks-card"],
       title: "View Tasks",
-      text: "People who added you to their viewers, with the Trusted and Open tasks they let you see. They are never told whether you looked.",
+      text: "People who added you to their viewers, with the Trusted and Open tasks they let you see. They are never told whether you looked. Open someone to Leave their list; they are not told that either.",
     },
     HELP_STEP,
   ],

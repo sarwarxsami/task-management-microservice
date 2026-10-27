@@ -36,7 +36,7 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 - **Usernames** — every user has a unique public username, separate from their name and student ID.
 - **Task visibility** — each task is **Only Me** (default), **Trusted** or **Open**. A Trusted task is shown to **All Trusted** (everyone on Your Task Viewers), only to **Hand-picked** people chosen from that list in a searchable picker, or to one or more **Groups**.
 - **Groups** — inside Your Task Viewers you can create, rename and delete groups and add or remove members; a person can be in several groups, and viewers in no group form the **Default** group. Every Trusted task in My tasks has a **Who can see** button listing its groups (with members) and the Default people one by one.
-- **Your Task Viewers / View Tasks** — choose who can see your Trusted tasks (one-way), and see the tasks of people who added you.
+- **Your Task Viewers / View Tasks** — choose who can see your Trusted tasks (one-way), and see the tasks of people who added you. You can **leave** anyone's list from View Tasks (also an Unlisted owner's, without learning who it is); they are not told.
 - **Viewer Access Requests** — ask someone to add you to their Task Viewers; accept or decline requests you receive (with a badge for pending ones).
 - **Discover and Spaces** — browse Listed users and an Open Tasks feed, and open anyone's Space to see what they share. **Listed / Unlisted** controls whether you appear.
 
@@ -150,7 +150,8 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 | GET | `/service/social-service/viewers` | Your Task Viewers |
 | POST | `/service/social-service/viewers` | `{ "username": "alice" }` — add a Listed user |
 | DELETE | `/service/social-service/viewers/:username` | Remove from Your Task Viewers |
-| GET | `/service/social-service/view-tasks` | People who added you, with their Trusted and Open tasks |
+| GET | `/service/social-service/view-tasks` | People who added you, with their Trusted and Open tasks → `[{ id, owner, since, tasks }]` |
+| DELETE | `/service/social-service/view-tasks/:id` | Leave that person's Your Task Viewers (and so their groups); they are not told |
 | GET | `/service/social-service/requests` | Viewer Access Requests received and sent |
 | POST | `/service/social-service/requests` | `{ "username": "alice" }` — ask a Listed user to add you |
 | POST | `/service/social-service/requests/:id/accept` | Accept (adds the requester to Your Task Viewers) |

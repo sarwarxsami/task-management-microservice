@@ -685,4 +685,48 @@ class SocialApiTests {
         mvc.perform(get(BASE + "/tasks/" + CAROL_TRUSTED + "/who-can-see").header("Authorization", alice))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void viewersCanLeaveSomeoneElsesList() throws Exception {
+        String alice = token("s-alice", "user");
+        String bob = token("s-bob", "user");
+        String carol = token("s-carol", "user");
+        setListed(alice, true);
+        setListed(bob, true);
+        addViewer(alice, "bob");
+        int study = createGroup(alice, "Study");
+        addMembers(alice, study, "[\"bob\"]").andExpect(status().isOk());
+        // carol (unlisted) adds bob too: bob sees her only as "User is Unlisted"
+        jdbc.update("INSERT INTO task_viewers (owner_id, viewer_id) VALUES ('s-carol', 's-bob')");
+
+        MvcResult r = mvc.perform(get(BASE + "/view-tasks").header("Authorization", bob))
+                .andExpect(jsonPath("$", hasSize(2))).andReturn();
+        String body = r.getResponse().getContentAsString();
+        List<Map<String, Object>> entries = JsonPath.read(body, "$");
+        int aliceLink = entries.stream().filter(e -> e.get("owner") != null).map(e -> (Integer) e.get("id")).findFirst().orElseThrow();
+        int carolLink = entries.stream().filter(e -> e.get("owner") == null).map(e -> (Integer) e.get("id")).findFirst().orElseThrow();
+
+        // nobody else can use bob's entries
+        mvc.perform(delete(BASE + "/view-tasks/" + aliceLink).header("Authorization", carol)).andExpect(status().isNotFound());
+        mvc.perform(delete(BASE + "/view-tasks/" + aliceLink).header("Authorization", alice)).andExpect(status().isNotFound());
+
+        mvc.perform(delete(BASE + "/view-tasks/" + aliceLink).header("Authorization", bob)).andExpect(status().isNoContent());
+        mvc.perform(delete(BASE + "/view-tasks/" + aliceLink).header("Authorization", bob)).andExpect(status().isNotFound());
+
+        // off her list, out of her groups, back to Open tasks only
+        mvc.perform(get(BASE + "/viewers").header("Authorization", alice)).andExpect(jsonPath("$", hasSize(0)));
+        mvc.perform(get(BASE + "/groups").header("Authorization", alice))
+                .andExpect(jsonPath("$.groups[0].members", hasSize(0)));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(jsonPath("$.relationship.addedMe").value(false))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")));
+
+        // an Unlisted owner's list can be left too, without learning who it is
+        mvc.perform(delete(BASE + "/view-tasks/" + carolLink).header("Authorization", bob)).andExpect(status().isNoContent());
+        mvc.perform(get(BASE + "/view-tasks").header("Authorization", bob)).andExpect(jsonPath("$", hasSize(0)));
+
+        // she can still add him again
+        addViewer(alice, "bob");
+        mvc.perform(get(BASE + "/view-tasks").header("Authorization", bob)).andExpect(jsonPath("$", hasSize(1)));
+    }
 }

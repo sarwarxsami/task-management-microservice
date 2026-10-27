@@ -19,7 +19,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class SocialRepository {
 
-    public record Link(String studentId, Instant createdAt) {
+    // one Your Task Viewers entry seen from one side: studentId is the other person
+    public record Link(int id, String studentId, Instant createdAt) {
     }
 
     public record AccessRequest(int id, String requesterId, String ownerId, Instant createdAt) {
@@ -62,13 +63,13 @@ public class SocialRepository {
     // ---- Your Task Viewers (owner -> viewer) ----
 
     public List<Link> viewersOf(String ownerId) {
-        return jdbc.query("SELECT viewer_id, created_at FROM task_viewers WHERE owner_id = ? ORDER BY created_at",
-                (rs, i) -> new Link(rs.getString(1), rs.getTimestamp(2).toInstant()), ownerId);
+        return jdbc.query("SELECT id, viewer_id, created_at FROM task_viewers WHERE owner_id = ? ORDER BY created_at",
+                (rs, i) -> new Link(rs.getInt(1), rs.getString(2), rs.getTimestamp(3).toInstant()), ownerId);
     }
 
     public List<Link> ownersWhoAdded(String viewerId) {
-        return jdbc.query("SELECT owner_id, created_at FROM task_viewers WHERE viewer_id = ? ORDER BY created_at",
-                (rs, i) -> new Link(rs.getString(1), rs.getTimestamp(2).toInstant()), viewerId);
+        return jdbc.query("SELECT id, owner_id, created_at FROM task_viewers WHERE viewer_id = ? ORDER BY created_at",
+                (rs, i) -> new Link(rs.getInt(1), rs.getString(2), rs.getTimestamp(3).toInstant()), viewerId);
     }
 
     public boolean isViewer(String ownerId, String viewerId) {
@@ -82,6 +83,12 @@ public class SocialRepository {
                 INSERT INTO task_viewers (owner_id, viewer_id) VALUES (?, ?)
                 ON CONFLICT DO NOTHING
                 """, ownerId, viewerId) > 0;
+    }
+
+    // The viewer takes themselves off an owner's list; returns that owner, or empty if it is not their entry
+    public Optional<String> leave(int linkId, String viewerId) {
+        return jdbc.query("DELETE FROM task_viewers WHERE id = ? AND viewer_id = ? RETURNING owner_id",
+                (rs, i) -> rs.getString(1), linkId, viewerId).stream().findFirst();
     }
 
     public boolean removeViewer(String ownerId, String viewerId) {

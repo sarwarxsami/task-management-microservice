@@ -99,6 +99,12 @@ public class SocialController {
         return service.viewTasks(caller(jwt));
     }
 
+    @DeleteMapping("/view-tasks/{id}")
+    public ResponseEntity<Void> leave(@AuthenticationPrincipal Jwt jwt, @PathVariable int id) {
+        service.leave(caller(jwt), id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/requests")
     public Requests requests(@AuthenticationPrincipal Jwt jwt) {
         return service.requests(caller(jwt));

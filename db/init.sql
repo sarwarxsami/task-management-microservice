@@ -149,3 +149,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS tour_done_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tours_done TEXT[] NOT NULL DEFAULT '{}';
 UPDATE users SET tours_done = ARRAY['tasks', 'discover', 'viewers', 'account', 'admin']
     WHERE tour_done_at IS NOT NULL AND tours_done = '{}';
+
+-- social-service: an id per Your Task Viewers entry, so a viewer can leave a list without
+-- learning who owns it (owners who are Unlisted show as "User is Unlisted")
+ALTER TABLE task_viewers ADD COLUMN IF NOT EXISTS id SERIAL;
+CREATE UNIQUE INDEX IF NOT EXISTS task_viewers_id_key ON task_viewers (id);

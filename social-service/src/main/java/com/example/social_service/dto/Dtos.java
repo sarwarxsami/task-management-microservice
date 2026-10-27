@@ -43,8 +43,8 @@ public final class Dtos {
     public record OpenTask(SharedTask task, Person owner) {
     }
 
-    // owner == null means "User is Unlisted"
-    public record ViewTasksEntry(Person owner, Instant since, List<SharedTask> tasks) {
+    // owner == null means "User is Unlisted"; id is what DELETE /view-tasks/{id} takes to leave their list
+    public record ViewTasksEntry(int id, Person owner, Instant since, List<SharedTask> tasks) {
     }
 
     public record Viewer(Person person, Instant since) {
