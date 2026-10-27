@@ -28,33 +28,35 @@
 
   <!-- AUTH: login card, what this place is, and how it works -->
   <main id="view-auth" class="auth" hidden>
-    <section class="card auth-card">
-      <div class="tabs" role="tablist">
-        <button type="button" class="tab active" data-auth-tab="login">Log in</button>
-        <button type="button" class="tab" data-auth-tab="register">Register</button>
-      </div>
+    <div class="auth-side">
+      <section class="card auth-card">
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab active" data-auth-tab="login">Log in</button>
+          <button type="button" class="tab" data-auth-tab="register">Register</button>
+        </div>
 
-      <form id="form-login" class="form-group">
-        <label>Student ID<input name="studentId" autocomplete="username" required /></label>
-        <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
-        <button type="submit">Log in</button>
-      </form>
+        <form id="form-login" class="form-group">
+          <label>Student ID<input name="studentId" autocomplete="username" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+          <button type="submit">Log in</button>
+        </form>
 
-      <form id="form-register" class="form-group" hidden>
-        <label>Full name<input name="name" maxlength="100" autocomplete="name" required /></label>
-        <label>Student ID<input name="studentId" maxlength="50" pattern="[A-Za-z0-9_\-]+" title="Letters, digits, - or _" autocomplete="username" required /></label>
-        <label>Username<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" title="3-30 letters, digits or _" placeholder="shown to other users" required /></label>
-        <label>Password<input name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required /></label>
-        <p class="hint">Your student ID is only for logging in and is never shown to anyone. Others only see your name and username.</p>
-        <p class="hint">Already added before accounts existed? Register with your existing student ID to set a password.</p>
-        <button type="submit">Create account</button>
-      </form>
+        <form id="form-register" class="form-group" hidden>
+          <label>Full name<input name="name" maxlength="100" autocomplete="name" required /></label>
+          <label>Student ID<input name="studentId" maxlength="50" pattern="[A-Za-z0-9_\-]+" title="Letters, digits, - or _" autocomplete="username" required /></label>
+          <label>Username<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" title="3-30 letters, digits or _" placeholder="shown to other users" required /></label>
+          <label>Password<input name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required /></label>
+          <p class="hint">Your student ID is only for logging in and is never shown to anyone. Others only see your name and username.</p>
+          <p class="hint">Already added before accounts existed? Register with your existing student ID to set a password.</p>
+          <button type="submit">Create account</button>
+        </form>
 
-      <p class="hint auth-note">New here? A short tour of every page starts after your first login.</p>
-    </section>
+        <p class="hint auth-note">New here? After you log in, a short tour of every page is one click away, whenever you want it.</p>
+      </section>
+    </div>
 
     <section class="about">
-      <p class="eyebrow">anti-social by design</p>
+      <p class="eyebrow">anti-social-media by design</p>
       <h1>A quiet place for your tasks.</h1>
 
       <ul class="creed">
@@ -367,12 +369,6 @@
       </form>
     </section>
 
-    <section class="card" id="tour-card">
-      <h2>Tour</h2>
-      <p class="hint">A walk through every page and button, like the one after your first login.</p>
-      <button type="button" class="ghost" id="btn-tour">Show the tour again</button>
-    </section>
-
     <section class="card danger-zone" id="delete-card">
       <h2>Delete account</h2>
       <p class="hint">Permanently deletes your account and all of your tasks.</p>
@@ -494,6 +490,25 @@
       <button type="button" class="small" id="who-close">Close</button>
     </div>
   </dialog>
+
+  <!-- Bottom-left corner: an offer of the tour until it is taken or declined, then a Help button -->
+  <aside id="help" hidden>
+    <section class="card help-invite" id="tour-invite" hidden aria-label="Tour">
+      <h2>New here?</h2>
+      <p>A short tour shows what every page and button does. It takes about a minute.</p>
+      <div class="row">
+        <button type="button" class="small" id="btn-tour">Take a short tour</button>
+        <button type="button" class="ghost small" id="tour-decline">No thanks</button>
+      </div>
+      <p class="hint">You can always take it later from Help, right here.</p>
+    </section>
+    <div id="help-box" hidden>
+      <div class="card help-menu" id="help-menu" hidden>
+        <button type="button" class="ghost small" id="btn-tour-again">Take another tour</button>
+      </div>
+      <button type="button" class="ghost small" id="btn-help" aria-expanded="false" aria-controls="help-menu">Help</button>
+    </div>
+  </aside>
 
   <!-- First-login tour: dims the page, outlines one thing at a time and explains it -->
   <div id="tour" hidden>

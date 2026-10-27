@@ -1024,10 +1024,20 @@ main.auth {
   max-width: 1040px;
 }
 
-.auth-card {
+/* a full-height column that stays put while the manual scrolls; the card sits in its middle,
+   or at its top when the screen is too short (auto margins never push it under the header) */
+.auth-side {
   grid-area: card;
   position: sticky;
-  top: 24px;
+  top: 70px;
+  height: calc(100vh - 140px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-card {
+  margin: auto 0;
 }
 
 .auth-note {
@@ -1115,9 +1125,65 @@ main.auth {
     gap: 28px;
   }
 
-  .auth-card {
+  .auth-side {
     position: static;
+    height: auto;
   }
+}
+
+/* ---------- bottom-left corner: tour offer, then Help ---------- */
+
+#help {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 20;
+}
+
+.help-invite {
+  width: min(300px, calc(100vw - 32px));
+  padding: 18px 20px;
+  gap: 10px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.45);
+}
+
+.help-invite h2 {
+  color: var(--text);
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.help-invite p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+#help-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+#help-box[hidden] {
+  display: none;
+}
+
+.help-menu {
+  padding: 8px;
+  gap: 4px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.45);
+}
+
+.help-menu button {
+  align-self: stretch;
+  text-align: left;
+}
+
+/* solid, so page content scrolling underneath does not show through */
+#btn-help {
+  background: var(--surface);
 }
 
 /* ---------- first-login tour ---------- */

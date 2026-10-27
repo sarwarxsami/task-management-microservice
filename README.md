@@ -28,7 +28,7 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 ## Features
 
 - **Anti-social by design** — no notifications, messages, likes or "seen": you keep your tasks, choose who may see them, and never learn whether anyone did. The login page explains this idea next to the login card, with a **How it works** manual in six dropdown sections.
-- **First-login tour** — after a user's first login, a step-by-step tour outlines every page, button and section and explains it (Next / Back / Skip, arrow keys, Esc). It is shown once per account (stored on the server) and can be replayed from Account.
+- **Tour and Help** — nothing starts by itself: until a user takes or declines it, a small card in the bottom-left corner of every page offers a short tour, which outlines every page, button and section and explains it (Next / Back / Skip, arrow keys, Esc). After that the corner shows a **Help** button with **Take another tour**. Taking or declining is stored per account on the server.
 - **Accounts** — register / log in with student ID and password (bcrypt-hashed), JWT sessions, change name and password, delete own account.
 - **Roles** — everyone, admins included, manages only their own tasks. An `admin` additionally sees every account's name and username and can delete accounts; nothing else (no student IDs, no other users' tasks, no renaming or role changes). Admins are exactly the student IDs in `ADMIN_STUDENT_IDS`, checked on every request.
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.

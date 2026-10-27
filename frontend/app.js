@@ -153,6 +153,7 @@ function saveSession(token, user) {
 
 function logout(message) {
   closeTour();
+  $("help").hidden = true;
   state.token = null;
   state.user = null;
   state.tasks = [];
@@ -178,7 +179,7 @@ async function startSession(restore = false) {
   }
   const last = restore ? store.get("tms.view") : null;
   await openView(["discover", "viewers"].includes(last) || (last === "admin" && isAdmin()) ? last : "tasks");
-  if (!state.user.tourDone) startTour();
+  renderHelp();
 }
 
 const LOADERS = {
@@ -760,14 +761,10 @@ async function updateSelf(body, message) {
 $("form-profile").addEventListener("submit", (e) => {
   e.preventDefault();
   const form = e.currentTarget;
-  withBusy(form, async () => {
-    const hadUsername = Boolean(state.user.username);
-    await updateSelf({
-      name: form.elements.name.value,
-      username: form.elements.username.value,
-    }, "Profile updated");
-    if (!hadUsername && !state.user.tourDone) startTour();
-  });
+  withBusy(form, () => updateSelf({
+    name: form.elements.name.value,
+    username: form.elements.username.value,
+  }, "Profile updated"));
 });
 
 async function loadSettings() {
@@ -1396,10 +1393,14 @@ const TOUR = [
     text: "Listed: you appear in Discover and others can open your Space. Unlisted (the default): hidden, and your Space opens only for you.",
   },
   { target: "#password-card", title: "Change password", text: "Needs your current password." },
-  { target: "#tour-card", title: "Tour", text: "Replay this tour whenever you like." },
   { target: "#delete-card", title: "Delete account", text: "Removes your account and all of your tasks for good." },
   {
     view: "tasks",
+    target: "#btn-help",
+    title: "Help",
+    text: "Always here in the corner. Take this tour again whenever you like.",
+  },
+  {
     title: "That's all",
     text: "Nothing here will call you back. Come when you want to, share what you like, and let it be. Whoever finds it came by themselves.",
   },
@@ -1552,25 +1553,69 @@ function closeTour() {
   tour.opened.clear();
 }
 
-// Finished or skipped: shown once per account, so it is recorded on the server
 async function finishTour() {
   closeTour();
-  // recorded first, so closing the tab right after Done still counts
-  if (!state.user.tourDone) {
-    try {
-      await api(`${USERS}/users/${encodeURIComponent(state.user.studentId)}/tour`, { method: "PUT" });
-      state.user.tourDone = true;
-    } catch (err) {
-      reportError(err);
-    }
-  }
+  // normally recorded when the tour was started; retried here in case that failed
+  if (!state.user.tourDone) await markTourDone().catch(reportError);
   await openView("tasks");
 }
 
 $("tour-next").addEventListener("click", () => showTourStep(tour.index + 1, 1));
 $("tour-back").addEventListener("click", () => showTourStep(tour.index - 1, -1));
 $("tour-skip").addEventListener("click", () => finishTour());
-$("btn-tour").addEventListener("click", () => startTour());
+
+// ---------- bottom-left corner: tour offer, then Help ----------
+// The tour is only ever offered, never started for you. Until it is taken or declined the corner offers it;
+// after that the corner is a small Help button.
+
+function renderHelp() {
+  const loggedIn = Boolean(state.token && state.user);
+  $("help").hidden = !loggedIn;
+  if (!loggedIn) return;
+  $("tour-invite").hidden = state.user.tourDone;
+  $("help-box").hidden = !state.user.tourDone;
+  closeHelpMenu();
+}
+
+// Taking or declining the offer both count, once per account, so it is recorded on the server
+async function markTourDone() {
+  if (state.user.tourDone) return;
+  await api(`${USERS}/users/${encodeURIComponent(state.user.studentId)}/tour`, { method: "PUT" });
+  state.user.tourDone = true;
+  renderHelp();
+}
+
+function closeHelpMenu() {
+  $("help-menu").hidden = true;
+  $("btn-help").setAttribute("aria-expanded", "false");
+}
+
+$("btn-tour").addEventListener("click", async () => {
+  await markTourDone().catch(reportError);
+  startTour();
+});
+
+$("tour-decline").addEventListener("click", async () => {
+  await markTourDone().catch(reportError);
+});
+
+$("btn-help").addEventListener("click", () => {
+  const open = $("help-menu").hidden;
+  $("help-menu").hidden = !open;
+  $("btn-help").setAttribute("aria-expanded", String(open));
+});
+
+$("btn-tour-again").addEventListener("click", () => {
+  closeHelpMenu();
+  startTour();
+});
+
+document.addEventListener("click", (e) => {
+  if (!$("help-menu").hidden && !$("help-box").contains(e.target)) closeHelpMenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("help-menu").hidden) closeHelpMenu();
+});
 
 // ---------- boot ----------
 
