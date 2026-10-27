@@ -159,6 +159,35 @@ class SocialApiTests {
                 .contentType(MediaType.APPLICATION_JSON).content("{\"usernames\":" + usernamesJson + "}"));
     }
 
+    private int createGroup(String auth, String name) throws Exception {
+        MvcResult r = mvc.perform(post(BASE + "/groups").header("Authorization", auth)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"" + name + "\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        return JsonPath.read(r.getResponse().getContentAsString(), "$.id");
+    }
+
+    private ResultActions addMembers(String auth, int groupId, String usernamesJson) throws Exception {
+        return mvc.perform(post(BASE + "/groups/" + groupId + "/members").header("Authorization", auth)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"usernames\":" + usernamesJson + "}"));
+    }
+
+    private ResultActions groupAudience(String auth, int taskId, String groupIdsJson, boolean includeDefault) throws Exception {
+        return mvc.perform(put(BASE + "/tasks/" + taskId + "/audience").header("Authorization", auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mode\":\"groups\",\"groupIds\":" + groupIdsJson + ",\"includeDefault\":" + includeDefault + "}"));
+    }
+
+    // alice is listed; bob, carol and admin are listed and on alice's task viewers
+    private void aliceWithThreeViewers() throws Exception {
+        for (String id : List.of("s-alice", "s-bob", "s-carol", "s-admin")) {
+            setListed(token(id, "user"), true);
+        }
+        String alice = token("s-alice", "user");
+        addViewer(alice, "bob");
+        addViewer(alice, "carol");
+        addViewer(alice, "admin");
+    }
+
     private int sendRequest(String auth, String username) throws Exception {
         MvcResult r = mvc.perform(post(BASE + "/requests").header("Authorization", auth)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"" + username + "\"}"))
@@ -474,5 +503,186 @@ class SocialApiTests {
         jdbc.update("DELETE FROM tasks WHERE id = ?", ALICE_TRUSTED);
         Integer left = jdbc.queryForObject("SELECT COUNT(*) FROM task_audiences WHERE task_id = ?", Integer.class, ALICE_TRUSTED);
         assertEquals(0, left);
+    }
+
+    @Test
+    void groupsAreManagedInsideYourTaskViewers() throws Exception {
+        String alice = token("s-alice", "user");
+        String bob = token("s-bob", "user");
+        setListed(bob, true);
+        setListed(token("s-carol", "user"), true);
+        addViewer(alice, "bob");
+        addViewer(alice, "carol");
+
+        // everyone starts in Default
+        mvc.perform(get(BASE + "/groups").header("Authorization", alice))
+                .andExpect(jsonPath("$.groups", hasSize(0)))
+                .andExpect(jsonPath("$.defaultMembers[*].username", contains("bob", "carol")));
+
+        int study = createGroup(alice, "  Study   Buddies ");
+        int friends = createGroup(alice, "Friends");
+        mvc.perform(post(BASE + "/groups").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"study buddies\"}"))
+                .andExpect(status().isConflict());
+        mvc.perform(post(BASE + "/groups").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"default\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post(BASE + "/groups").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\" \"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post(BASE + "/groups").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"" + "x".repeat(31) + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        // someone can be in several groups; Default is whoever is in none
+        addMembers(alice, study, "[\"bob\",\"carol\"]").andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Study Buddies"))
+                .andExpect(jsonPath("$.members[*].username", contains("bob", "carol")));
+        addMembers(alice, friends, "[\"carol\"]").andExpect(status().isOk());
+        addMembers(alice, friends, "[\"admin\"]").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("@admin is not one of your task viewers"));
+        addMembers(alice, friends, "[]").andExpect(status().isBadRequest());
+        mvc.perform(get(BASE + "/groups").header("Authorization", alice))
+                .andExpect(jsonPath("$.groups[*].name", contains("Friends", "Study Buddies")))
+                .andExpect(jsonPath("$.defaultMembers", hasSize(0)));
+
+        // rename
+        mvc.perform(put(BASE + "/groups/" + study).header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Lab\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Lab"));
+        mvc.perform(put(BASE + "/groups/" + study).header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"FRIENDS\"}"))
+                .andExpect(status().isConflict());
+
+        // remove member: bob is in no group now, so back in Default
+        mvc.perform(delete(BASE + "/groups/" + study + "/members/bob").header("Authorization", alice))
+                .andExpect(status().isNoContent());
+        mvc.perform(delete(BASE + "/groups/" + study + "/members/bob").header("Authorization", alice))
+                .andExpect(status().isNotFound());
+        mvc.perform(get(BASE + "/groups").header("Authorization", alice))
+                .andExpect(jsonPath("$.defaultMembers[*].username", contains("bob")));
+
+        // only the owner can touch their groups
+        addMembers(bob, study, "[\"carol\"]").andExpect(status().isNotFound());
+        mvc.perform(delete(BASE + "/groups/" + study).header("Authorization", bob)).andExpect(status().isNotFound());
+        mvc.perform(get(BASE + "/groups").header("Authorization", bob)).andExpect(jsonPath("$.groups", hasSize(0)));
+
+        // delete
+        mvc.perform(delete(BASE + "/groups/" + friends).header("Authorization", alice)).andExpect(status().isNoContent());
+        mvc.perform(get(BASE + "/groups").header("Authorization", alice))
+                .andExpect(jsonPath("$.groups[*].name", contains("Lab")));
+
+        // leaving Your Task Viewers means leaving every group
+        mvc.perform(delete(BASE + "/viewers/carol").header("Authorization", alice)).andExpect(status().isNoContent());
+        addViewer(alice, "carol");
+        mvc.perform(get(BASE + "/groups").header("Authorization", alice))
+                .andExpect(jsonPath("$.groups[0].members", hasSize(0)))
+                .andExpect(jsonPath("$.defaultMembers[*].username", contains("bob", "carol")));
+    }
+
+    @Test
+    void groupAudienceFollowsGroupMembership() throws Exception {
+        aliceWithThreeViewers();
+        String alice = token("s-alice", "user");
+        String bob = token("s-bob", "user");
+        String carol = token("s-carol", "user");
+        String admin = token("s-admin", "user");
+        int study = createGroup(alice, "Study");
+        int empty = createGroup(alice, "Empty");
+        addMembers(alice, study, "[\"bob\"]").andExpect(status().isOk());
+        // Default now: carol, admin
+
+        groupAudience(alice, ALICE_TRUSTED, "[" + study + "]", false).andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("groups"))
+                .andExpect(jsonPath("$.groups[*].name", contains("Study")))
+                .andExpect(jsonPath("$.includeDefault").value(false));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice trusted", "alice open")));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")));
+
+        // Default only
+        groupAudience(alice, ALICE_TRUSTED, "[]", true).andExpect(status().isOk());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")));
+        mvc.perform(get(BASE + "/view-tasks").header("Authorization", carol))
+                .andExpect(jsonPath("$[0].tasks[*].title", containsInAnyOrder("alice trusted", "alice open")));
+
+        // Study + Default: everyone
+        groupAudience(alice, ALICE_TRUSTED, "[" + study + "," + empty + "]", true).andExpect(status().isOk());
+        for (String t : List.of(bob, carol, admin)) {
+            mvc.perform(get(BASE + "/spaces/alice").header("Authorization", t))
+                    .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice trusted", "alice open")));
+        }
+
+        // Study only, then membership changes apply live
+        groupAudience(alice, ALICE_TRUSTED, "[" + study + "]", false).andExpect(status().isOk());
+        addMembers(alice, study, "[\"carol\"]").andExpect(status().isOk());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice trusted", "alice open")));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", admin))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")));
+
+        mvc.perform(get(BASE + "/audiences").header("Authorization", alice))
+                .andExpect(jsonPath("$[0].mode").value("groups"))
+                .andExpect(jsonPath("$[0].groups[*].id", contains(study)));
+
+        // deleting the only chosen group never widens access
+        mvc.perform(delete(BASE + "/groups/" + study).header("Authorization", alice)).andExpect(status().isNoContent());
+        for (String t : List.of(bob, carol, admin)) {
+            mvc.perform(get(BASE + "/spaces/alice").header("Authorization", t))
+                    .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")));
+        }
+
+        // validation
+        groupAudience(alice, ALICE_TRUSTED, "[]", false).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Pick at least one group"));
+        int carolsGroup = createGroup(carol, "Mine");
+        groupAudience(alice, ALICE_TRUSTED, "[" + carolsGroup + "]", false).andExpect(status().isBadRequest());
+        mvc.perform(put(BASE + "/tasks/" + ALICE_TRUSTED + "/audience").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"mode\":\"everyone\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void whoCanSeeListsGroupsAndDefaultPeople() throws Exception {
+        aliceWithThreeViewers();
+        String alice = token("s-alice", "user");
+        int study = createGroup(alice, "Study");
+        addMembers(alice, study, "[\"bob\"]").andExpect(status().isOk());
+        String who = BASE + "/tasks/" + ALICE_TRUSTED + "/who-can-see";
+
+        // All Trusted: every group, plus Default people one by one
+        mvc.perform(get(who).header("Authorization", alice))
+                .andExpect(jsonPath("$.mode").value("all"))
+                .andExpect(jsonPath("$.groups[0].name").value("Study"))
+                .andExpect(jsonPath("$.groups[0].members[*].username", contains("bob")))
+                .andExpect(jsonPath("$.people[*].person.username", contains("admin", "carol")))
+                .andExpect(jsonPath("$.people[*].inDefault", contains(true, true)));
+
+        // Hand-picked: the people, marked when in Default
+        pick(alice, ALICE_TRUSTED, "[\"bob\",\"carol\"]").andExpect(status().isOk());
+        mvc.perform(get(who).header("Authorization", alice))
+                .andExpect(jsonPath("$.mode").value("picked"))
+                .andExpect(jsonPath("$.groups", hasSize(0)))
+                .andExpect(jsonPath("$.people[*].person.username", contains("bob", "carol")))
+                .andExpect(jsonPath("$.people[*].inDefault", contains(false, true)));
+
+        // Groups: chosen groups, Default people only when Default was chosen
+        groupAudience(alice, ALICE_TRUSTED, "[" + study + "]", false).andExpect(status().isOk());
+        mvc.perform(get(who).header("Authorization", alice))
+                .andExpect(jsonPath("$.mode").value("groups"))
+                .andExpect(jsonPath("$.groups[*].name", contains("Study")))
+                .andExpect(jsonPath("$.people", hasSize(0)));
+        groupAudience(alice, ALICE_TRUSTED, "[" + study + "]", true).andExpect(status().isOk());
+        mvc.perform(get(who).header("Authorization", alice))
+                .andExpect(jsonPath("$.people[*].person.username", contains("admin", "carol")))
+                .andExpect(jsonPath("$.includeDefault").value(true));
+
+        // only for my own Trusted tasks
+        mvc.perform(get(BASE + "/tasks/900001/who-can-see").header("Authorization", alice))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get(BASE + "/tasks/" + CAROL_TRUSTED + "/who-can-see").header("Authorization", alice))
+                .andExpect(status().isNotFound());
     }
 }

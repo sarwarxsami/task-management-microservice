@@ -57,11 +57,37 @@ public final class Dtos {
     public record Requests(List<RequestEntry> incoming, List<RequestEntry> outgoing) {
     }
 
-    // Hand-picked audience of one of my Trusted tasks (only people still on my task viewers)
-    public record Audience(int taskId, List<Person> people) {
+    public record GroupRef(int id, String name) {
     }
 
-    public record AudienceBody(List<String> usernames) {
+    // A group inside Your Task Viewers; members are people still on the list
+    public record GroupView(int id, String name, List<Person> members) {
+    }
+
+    // defaultMembers: viewers in no group
+    public record Groups(List<GroupView> groups, List<Person> defaultMembers) {
+    }
+
+    public record GroupBody(String name) {
+    }
+
+    public record UsernamesBody(List<String> usernames) {
+    }
+
+    // Audience of one of my Trusted tasks: mode "picked" (people) or "groups" (groups, and Default when includeDefault)
+    public record Audience(int taskId, String mode, List<Person> people, List<GroupRef> groups, boolean includeDefault) {
+    }
+
+    // mode defaults to "picked"
+    public record AudienceBody(String mode, List<String> usernames, List<Integer> groupIds, Boolean includeDefault) {
+    }
+
+    public record WhoPerson(Person person, boolean inDefault) {
+    }
+
+    // Who can see one of my Trusted tasks. mode: "all", "picked" or "groups".
+    // all: every group plus Default people; picked: the people; groups: the chosen groups plus Default people if chosen
+    public record WhoCanSee(String mode, List<GroupView> groups, List<WhoPerson> people, boolean includeDefault) {
     }
 
     public record Settings(Boolean listed) {

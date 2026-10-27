@@ -10,7 +10,7 @@ const state = {
   token: null,
   user: null,
   tasks: [],
-  audiences: new Map(), // taskId -> picked people of my Hand-picked tasks
+  audiences: new Map(), // taskId -> audience of my Hand-picked / Group tasks
   users: [],
   status: "all",
   view: "tasks",
@@ -169,7 +169,6 @@ async function startSession(restore = false) {
   $("nav-role").className = "badge " + state.user.role;
   $("nav-admin").hidden = !isAdmin();
 
-  await loadTasks();
   refreshRequestBadge();
 
   if (!state.user.username) {
@@ -181,6 +180,8 @@ async function startSession(restore = false) {
 }
 
 const LOADERS = {
+  // reloaded on every visit, so changes made on other pages (e.g. a deleted group) show up
+  tasks: () => loadTasks(),
   admin: async () => { await loadUsers(); renderUsers(); },
   discover: () => loadDiscover(),
   viewers: () => loadViewers(),
@@ -285,7 +286,7 @@ async function loadTasks() {
     }),
   ]);
   state.tasks = tasks;
-  state.audiences = new Map(audiences.map((a) => [a.taskId, a.people]));
+  state.audiences = new Map(audiences.map((a) => [a.taskId, a]));
   renderTasks();
 }
 
@@ -350,6 +351,9 @@ function renderTask(task) {
 
   fillTaskPills(item, task, state.audiences.get(task.id));
 
+  const who = item.querySelector('[data-action="who"]');
+  who.hidden = task.visibility !== "trusted";
+  who.addEventListener("click", () => showWhoCanSee(task));
   item.querySelector('[data-action="edit"]').addEventListener("click", () => {
     item.replaceWith(renderEditor(task));
   });
@@ -358,7 +362,7 @@ function renderTask(task) {
 }
 
 // Priority, visibility, due date and description, shared by own and others' tasks.
-// audience: picked people when it is one of my Hand-picked tasks
+// audience: set when it is one of my Hand-picked / Group tasks
 function fillTaskPills(item, task, audience) {
   const priority = item.querySelector(".priority");
   priority.textContent = task.priority;
@@ -367,9 +371,13 @@ function fillTaskPills(item, task, audience) {
   const visibility = item.querySelector(".visibility");
   visibility.textContent = VISIBILITY_LABEL[task.visibility] || task.visibility;
   visibility.classList.add(`vis-${task.visibility}`);
-  if (task.visibility === "trusted" && audience) {
-    visibility.textContent = `Hand-picked · ${audience.length}`;
-    visibility.title = audience.map((p) => `@${p.username}`).join(", ") || "Nobody picked is still on Your Task Viewers";
+  if (task.visibility === "trusted" && audience?.mode === "picked") {
+    visibility.textContent = `Hand-picked · ${audience.people.length}`;
+    visibility.title = audience.people.map((p) => `@${p.username}`).join(", ") || "Nobody picked is still on Your Task Viewers";
+  } else if (task.visibility === "trusted" && audience?.mode === "groups") {
+    const n = audience.groups.length + (audience.includeDefault ? 1 : 0);
+    visibility.textContent = `Groups · ${n}`;
+    visibility.title = groupNames(audience) || "None of the chosen groups exist any more";
   }
 
   const due = dueInfo(task);
@@ -395,8 +403,7 @@ function renderEditor(task) {
   form.elements.deadline.value = task.deadline || "";
   form.elements.priority.value = task.priority;
   form.elements.visibility.value = task.visibility || "only_me";
-  const picked = state.audiences.get(task.id);
-  setupAudience(form, picked ? { mode: "picked", people: picked } : undefined);
+  setupAudience(form, state.audiences.get(task.id));
 
   item.querySelector('[data-action="cancel"]').addEventListener("click", renderTasks);
   form.addEventListener("submit", (e) => {
@@ -455,8 +462,6 @@ $("form-task").addEventListener("submit", (e) => {
   });
 });
 
-setupAudience($("form-task"));
-
 $("btn-clear-done").addEventListener("click", async () => {
   if (!confirm("Delete all of your completed tasks?")) return;
   try {
@@ -492,24 +497,29 @@ function taskBody(form) {
   };
 }
 
-// Creates (task = null) or updates a task together with its Hand-picked audience.
-// A new Hand-picked task is created as Only Me and opened up only after its audience is stored,
+// What social-service stores for a Hand-picked or Group audience
+function audienceBody(audience) {
+  if (audience.mode === "picked") {
+    return { mode: "picked", usernames: audience.people.map((p) => p.username) };
+  }
+  return { mode: "groups", groupIds: audience.groups.map((g) => g.id), includeDefault: audience.includeDefault };
+}
+
+// Creates (task = null) or updates a task together with its audience.
+// A new Hand-picked / Group task is created as Only Me and opened up only after its audience is stored,
 // so it is never visible to all trusted viewers, not even for a moment.
 async function saveTask(task, body, audience) {
-  const picked = body.visibility === "trusted" && audience.mode === "picked";
-  const setAudience = (id) => api(`${SOCIAL}/tasks/${id}/audience`, {
-    method: "PUT",
-    body: { usernames: audience.people.map((p) => p.username) },
-  });
+  const limited = body.visibility === "trusted" && audience.mode !== "all";
+  const setAudience = (id) => api(`${SOCIAL}/tasks/${id}/audience`, { method: "PUT", body: audienceBody(audience) });
 
   if (!task) {
-    if (!picked) return api(`${TASKS}/tasks`, { method: "POST", body });
+    if (!limited) return api(`${TASKS}/tasks`, { method: "POST", body });
     const created = await api(`${TASKS}/tasks`, { method: "POST", body: { ...body, visibility: "only_me" } });
     await setAudience(created.id);
     return api(`${TASKS}/tasks/${created.id}`, { method: "PUT", body });
   }
 
-  if (picked) {
+  if (limited) {
     await setAudience(task.id);
     return api(`${TASKS}/tasks/${task.id}`, { method: "PUT", body });
   }
@@ -520,8 +530,15 @@ async function saveTask(task, body, audience) {
   return updated;
 }
 
-// Wires the audience row of a task form; form.audience = { mode: "all" | "picked", people: [{ username, name }] }
-function setupAudience(form, initial = { mode: "all", people: [] }) {
+const ALL_TRUSTED = { mode: "all", people: [], groups: [], includeDefault: false };
+
+// "Study, Default"
+function groupNames(audience) {
+  return [...audience.groups.map((g) => g.name), ...(audience.includeDefault ? ["Default"] : [])].join(", ");
+}
+
+// Wires the audience row of a task form; form.audience is ALL_TRUSTED or an audience from GET /audiences
+function setupAudience(form, initial = ALL_TRUSTED) {
   const box = form.querySelector(".audience");
   const visibility = form.elements.visibility;
   form.audience = initial;
@@ -533,50 +550,58 @@ function setupAudience(form, initial = { mode: "all", people: [] }) {
     });
 
     const summary = box.querySelector(".audience-summary");
-    const people = form.audience.people;
-    summary.hidden = form.audience.mode !== "picked";
+    const { mode, people } = form.audience;
+    summary.hidden = mode === "all";
     summary.replaceChildren();
-    if (form.audience.mode === "picked") {
-      const change = el("button", "link", "Change");
-      change.type = "button";
-      change.addEventListener("click", pick);
+    if (mode === "all") return;
+
+    const change = el("button", "link", "Change");
+    change.type = "button";
+    change.addEventListener("click", mode === "picked" ? pickPeople : pickGroups);
+    if (mode === "picked") {
       const names = people.map((p) => `@${p.username}`).join(", ");
       summary.append(`${plural(people.length, "person", "people")}${names ? `: ${names}` : ""} · `, change);
+    } else {
+      summary.append(`Groups: ${groupNames(form.audience) || "none left"} · `, change);
     }
   };
 
-  const pick = async () => {
-    const people = await pickViewers(form.audience.people);
-    if (people) form.audience = { mode: "picked", people };
+  const pickPeople = async () => {
+    const people = await pickViewers(form.audience.mode === "picked" ? form.audience.people : []);
+    if (people) form.audience = { ...ALL_TRUSTED, mode: "picked", people };
+    render();
+  };
+
+  const pickGroups = async () => {
+    const chosen = await pickTaskGroups(form.audience.mode === "groups" ? form.audience : ALL_TRUSTED);
+    if (chosen) form.audience = { ...ALL_TRUSTED, mode: "groups", ...chosen };
     render();
   };
 
   visibility.addEventListener("change", render);
   box.querySelector('[data-audience="all"]').addEventListener("click", () => {
-    form.audience = { mode: "all", people: [] };
+    form.audience = ALL_TRUSTED;
     render();
   });
-  box.querySelector('[data-audience="picked"]').addEventListener("click", pick);
+  box.querySelector('[data-audience="picked"]').addEventListener("click", pickPeople);
+  box.querySelector('[data-audience="groups"]').addEventListener("click", pickGroups);
   form.resetAudience = () => {
-    form.audience = { mode: "all", people: [] };
+    form.audience = ALL_TRUSTED;
     render();
   };
   render();
 }
 
-// Opens the picker over Your Task Viewers; resolves to the chosen people, or null when cancelled
-async function pickViewers(selected) {
-  let viewers;
-  try {
-    viewers = (await api(`${SOCIAL}/viewers`)).map((v) => v.person);
-  } catch (err) {
-    reportError(err);
-    return null;
-  }
+setupAudience($("form-task"));
 
+// Searchable checkbox list in a pop-up. items: [{ key, label, sub }].
+// Resolves to the ticked keys (in list order), or null when cancelled.
+function pickFromList({ title, hint, items, selected = [], emptyText }) {
   const dialog = $("picker");
   const search = $("picker-search");
-  const chosen = new Set(selected.map((p) => p.username));
+  const chosen = new Set(selected);
+  $("picker-title").textContent = title;
+  $("picker-hint").textContent = hint;
 
   const count = () => {
     $("picker-count").textContent = `${chosen.size} selected`;
@@ -584,27 +609,25 @@ async function pickViewers(selected) {
   };
   const draw = () => {
     const q = search.value.trim().toLowerCase().replace(/^@/, "");
-    const shown = viewers.filter((p) => !q || `${p.name} ${p.username}`.toLowerCase().includes(q));
-    $("picker-list").replaceChildren(...shown.map((p) => {
+    const shown = items.filter((item) => !q || `${item.label} ${item.sub}`.toLowerCase().includes(q));
+    $("picker-list").replaceChildren(...shown.map((item) => {
       const box = el("input");
       box.type = "checkbox";
-      box.checked = chosen.has(p.username);
+      box.checked = chosen.has(item.key);
       box.addEventListener("change", () => {
-        if (box.checked) chosen.add(p.username);
-        else chosen.delete(p.username);
+        if (box.checked) chosen.add(item.key);
+        else chosen.delete(item.key);
         count();
       });
       const label = el("label", "pick");
-      label.append(box, el("span", "pick-name", p.name), el("span", "muted", `@${p.username}`));
+      label.append(box, el("span", "pick-name", item.label), el("span", "muted", item.sub));
       const li = el("li");
       li.append(label);
       return li;
     }));
     const empty = $("picker-empty");
     empty.hidden = shown.length > 0;
-    empty.textContent = viewers.length === 0
-      ? "Your Task Viewers list is empty. Add people on the Viewers page first."
-      : "Nobody matches your search.";
+    empty.textContent = items.length === 0 ? emptyText : "Nothing matches your search.";
   };
 
   search.value = "";
@@ -619,15 +642,107 @@ async function pickViewers(selected) {
       dialog.close();
       resolve(result);
     };
-    $("picker-done").onclick = () => finish(viewers
-      .filter((p) => chosen.has(p.username))
-      .map((p) => ({ username: p.username, name: p.name })));
+    $("picker-done").onclick = () => finish(items.filter((item) => chosen.has(item.key)).map((item) => item.key));
     $("picker-cancel").onclick = () => finish(null);
     dialog.oncancel = (e) => {
       e.preventDefault();
       finish(null);
     };
   });
+}
+
+// Hand-picked: people from Your Task Viewers; resolves to [{ username, name }] or null
+async function pickViewers(selected) {
+  let viewers;
+  try {
+    viewers = (await api(`${SOCIAL}/viewers`)).map((v) => v.person);
+  } catch (err) {
+    reportError(err);
+    return null;
+  }
+  const keys = await pickFromList({
+    title: "Hand-pick viewers",
+    hint: "Only the people you tick can see this task. Everyone here is on Your Task Viewers.",
+    items: viewers.map((p) => ({ key: p.username, label: p.name, sub: `@${p.username}` })),
+    selected: selected.map((p) => p.username),
+    emptyText: "Your Task Viewers list is empty. Add people on the Viewers page first.",
+  });
+  return keys && viewers.filter((p) => keys.includes(p.username)).map((p) => ({ username: p.username, name: p.name }));
+}
+
+// Group: several groups, Default included; resolves to { groups: [{ id, name }], includeDefault } or null
+async function pickTaskGroups(current) {
+  let data;
+  try {
+    data = await api(`${SOCIAL}/groups`);
+  } catch (err) {
+    reportError(err);
+    return null;
+  }
+  const items = [
+    ...data.groups.map((g) => ({ key: `g${g.id}`, label: g.name, sub: plural(g.members.length, "member") })),
+    { key: "default", label: "Default", sub: `${plural(data.defaultMembers.length, "person", "people")} in no group` },
+  ];
+  const keys = await pickFromList({
+    title: "Share with groups",
+    hint: "Everyone in a ticked group can see this task. Create and fill groups under Your Task Viewers on the Viewers page.",
+    items,
+    selected: [...current.groups.map((g) => `g${g.id}`), ...(current.includeDefault ? ["default"] : [])],
+    emptyText: "",
+  });
+  if (!keys) return null;
+  return {
+    groups: data.groups.filter((g) => keys.includes(`g${g.id}`)).map((g) => ({ id: g.id, name: g.name })),
+    includeDefault: keys.includes("default"),
+  };
+}
+
+// Read-only pop-up: the groups and people who can see one of my Trusted tasks
+async function showWhoCanSee(task) {
+  let who;
+  try {
+    who = await api(`${SOCIAL}/tasks/${task.id}/who-can-see`);
+  } catch (err) {
+    reportError(err);
+    return;
+  }
+
+  const summary = {
+    all: "All Trusted: everyone on Your Task Viewers.",
+    picked: "Hand-picked: only these people.",
+    groups: "Group: everyone in these groups.",
+  }[who.mode];
+  $("who-title").textContent = task.title;
+  $("who-summary").textContent = summary;
+
+  $("who-groups").replaceChildren(...who.groups.map((g) => {
+    const group = el("details", "fold sub");
+    const head = el("summary");
+    head.append(el("h3", null, g.name), el("span", "hint", plural(g.members.length, "member")));
+    const list = el("ul", "people compact");
+    list.append(...g.members.map((p) => personRow(p)));
+    const body = el("div", "fold-body");
+    body.append(g.members.length ? list : el("p", "empty small", "Nobody in this group yet."));
+    group.append(head, body);
+    return group;
+  }));
+
+  $("who-people").replaceChildren(...who.people.map((w) => personRow(w.person, w.inDefault ? "Default group" : null)));
+  $("who-empty").hidden = who.groups.length > 0 || who.people.length > 0;
+
+  const dialog = $("who");
+  dialog.showModal();
+  $("who-close").onclick = () => dialog.close();
+}
+
+// A person line; note is an optional side note such as "Default group"
+function personRow(person, note) {
+  const li = el("li", "person-card");
+  const info = el("div", "person-info");
+  info.append(personLink(person));
+  li.append(info);
+  if (note) li.append(el("span", "pill", note));
+  return li;
 }
 
 // ---------- account ----------
@@ -941,10 +1056,11 @@ $("btn-space-back").addEventListener("click", () => openView(state.backView || "
 // ---------- Viewers ----------
 
 async function loadViewers() {
-  const [requests, viewers, viewTasks] = await Promise.all([
+  const [requests, viewers, viewTasks, groups] = await Promise.all([
     api(`${SOCIAL}/requests`),
     api(`${SOCIAL}/viewers`),
     api(`${SOCIAL}/view-tasks`),
+    api(`${SOCIAL}/groups`),
   ]);
   const reload = async () => {
     await loadViewers();
@@ -957,7 +1073,8 @@ async function loadViewers() {
   $("requests-count").textContent = `${requests.incoming.length} received · ${requests.outgoing.length} sent`;
   $("requests-in-count").textContent = requests.incoming.length;
   $("requests-out-count").textContent = requests.outgoing.length;
-  $("viewers-count").textContent = plural(viewers.length, "person", "people");
+  $("viewers-count").textContent = `${plural(viewers.length, "person", "people")} · ${plural(groups.groups.length, "group")}`;
+  $("all-viewers-count").textContent = viewers.length;
   $("viewtasks-count").textContent = plural(viewTasks.length, "person", "people");
 
   $("requests-in").replaceChildren(...requests.incoming.map((r) => {
@@ -1010,6 +1127,8 @@ async function loadViewers() {
   }));
   $("viewer-empty").hidden = viewers.length > 0;
 
+  renderGroups(groups, viewers.map((v) => v.person), reload);
+
   // one dropdown per person; the ones already open stay open after a refresh
   const opened = new Set([...$("viewtasks-list").querySelectorAll("details[open]")].map((d) => d.dataset.key));
   $("viewtasks-list").replaceChildren(...viewTasks.map((entry, i) => {
@@ -1028,6 +1147,121 @@ async function loadViewers() {
   }));
   $("viewtasks-empty").hidden = viewTasks.length > 0;
 }
+
+// Groups inside Your Task Viewers, then Default (viewers in no group); open dropdowns stay open after a refresh
+function renderGroups({ groups, defaultMembers }, viewers, reload) {
+  const list = $("group-list");
+  const opened = new Set([...list.querySelectorAll("details[open]")].map((d) => d.dataset.key));
+
+  const dropdown = (key, name, count, body) => {
+    const box = el("details", "fold sub");
+    box.dataset.key = key;
+    box.open = opened.has(key);
+    const head = el("summary");
+    head.append(el("h3", null, name), el("span", "hint", count));
+    box.append(head, body);
+    return box;
+  };
+
+  const members = (people, removeFrom) => {
+    if (people.length === 0) return el("p", "empty small", "Nobody in this group yet.");
+    const ul = el("ul", "people compact");
+    ul.append(...people.map((p) => {
+      const li = personRow(p);
+      if (removeFrom) {
+        const actions = el("div", "row-actions");
+        actions.append(button("Remove", "ghost small", async () => {
+          await api(`${SOCIAL}/groups/${removeFrom.id}/members/${encodeURIComponent(p.username)}`, { method: "DELETE" });
+          toast(`${p.name} removed from ${removeFrom.name}`);
+          await reload();
+        }));
+        li.append(actions);
+      }
+      return li;
+    }));
+    return ul;
+  };
+
+  list.replaceChildren(
+    ...groups.map((g) => {
+      const body = el("div", "fold-body");
+      const actions = el("div", "row-actions start");
+
+      const add = button("Add member", "small", async () => {
+        const inGroup = new Set(g.members.map((m) => m.username));
+        const candidates = viewers.filter((p) => !inGroup.has(p.username));
+        const keys = await pickFromList({
+          title: `Add to ${g.name}`,
+          hint: "Your task viewers who are not in this group yet. Someone can be in several groups.",
+          items: candidates.map((p) => ({ key: p.username, label: p.name, sub: `@${p.username}` })),
+          emptyText: viewers.length === 0
+            ? "Your Task Viewers list is empty. Add people above first."
+            : "Everyone on Your Task Viewers is already in this group.",
+        });
+        if (!keys) return;
+        await api(`${SOCIAL}/groups/${g.id}/members`, { method: "POST", body: { usernames: keys } });
+        toast(`Added ${plural(keys.length, "person", "people")} to ${g.name}`);
+        await reload();
+      });
+
+      const rename = button("Rename", "ghost small", async () => {
+        const form = el("form", "row");
+        const input = el("input");
+        input.name = "name";
+        input.value = g.name;
+        input.maxLength = 30;
+        input.required = true;
+        input.setAttribute("aria-label", "Group name");
+        const save = el("button", "small", "Save");
+        save.type = "submit";
+        const cancel = el("button", "ghost small", "Cancel");
+        cancel.type = "button";
+        cancel.addEventListener("click", () => form.replaceWith(actions));
+        form.append(input, save, cancel);
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          withBusy(form, async () => {
+            await api(`${SOCIAL}/groups/${g.id}`, { method: "PUT", body: { name: input.value } });
+            toast("Group renamed");
+            await reload();
+          });
+        });
+        actions.replaceWith(form);
+        input.focus();
+      });
+
+      const del = button("Delete", "ghost small danger-text", async () => {
+        if (!confirm(`Delete the group "${g.name}"? Its members stay on Your Task Viewers. Tasks shared only with this group will be visible to nobody.`)) return;
+        await api(`${SOCIAL}/groups/${g.id}`, { method: "DELETE" });
+        toast(`Group ${g.name} deleted`);
+        await reload();
+      });
+
+      actions.append(add, rename, del);
+      body.append(members(g.members, g), actions);
+      return dropdown(`g${g.id}`, g.name, plural(g.members.length, "member"), body);
+    }),
+    (() => {
+      const body = el("div", "fold-body");
+      body.append(el("p", "hint", "Your task viewers who are in no group."), members(defaultMembers, null));
+      return dropdown("default", "Default", plural(defaultMembers.length, "member"), body);
+    })(),
+  );
+}
+
+$("form-new-group").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  withBusy(form, async () => {
+    const group = await api(`${SOCIAL}/groups`, { method: "POST", body: { name: form.elements.name.value } });
+    form.reset();
+    toast(`Group ${group.name} created`);
+    await loadViewers();
+    // show the new group straight away so members can be added
+    const created = $("group-list").querySelector(`[data-key="g${group.id}"]`);
+    if (created) created.open = true;
+  });
+});
 
 $("form-viewer").addEventListener("submit", (e) => {
   e.preventDefault();

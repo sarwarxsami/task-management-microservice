@@ -90,7 +90,7 @@
             <div class="segmented" role="group" aria-label="Who in your trusted list can see it">
               <button type="button" data-audience="all">All Trusted</button>
               <button type="button" data-audience="picked">Hand-picked</button>
-              <button type="button" data-audience="group" disabled title="Coming soon">Group <span class="soon">soon</span></button>
+              <button type="button" data-audience="groups">Group</button>
             </div>
             <p class="hint audience-summary" hidden></p>
           </div>
@@ -214,13 +214,26 @@
             <span class="hint" id="viewers-count"></span>
           </summary>
           <div class="fold-body">
-            <p class="hint">People on this list can see your <b>Trusted</b> tasks. Adding someone is one-way.</p>
+            <p class="hint">People on this list can see your <b>Trusted</b> tasks. Adding someone is one-way. Put people in groups to share a task with only some of them; whoever is in no group is in <b>Default</b>.</p>
             <form id="form-viewer" class="row">
               <input name="username" placeholder="Add by username" aria-label="Username" required />
               <button type="submit">Add</button>
             </form>
-            <ul id="viewer-list" class="people compact"></ul>
-            <p id="viewer-empty" class="empty small">Nobody yet.</p>
+            <details class="fold sub" data-key="all">
+              <summary>
+                <h3>All viewers</h3>
+                <span class="hint" id="all-viewers-count"></span>
+              </summary>
+              <div class="fold-body">
+                <ul id="viewer-list" class="people compact"></ul>
+                <p id="viewer-empty" class="empty small">Nobody yet.</p>
+              </div>
+            </details>
+            <form id="form-new-group" class="row">
+              <input name="name" maxlength="30" placeholder="New group name" aria-label="New group name" required />
+              <button type="submit">Create group</button>
+            </form>
+            <div id="group-list" class="stack tight"></div>
           </div>
         </details>
       </div>
@@ -308,6 +321,7 @@
         <p class="task-desc" hidden></p>
       </div>
       <div class="task-actions">
+        <button type="button" class="ghost small" data-action="who" hidden>Who can see</button>
         <button type="button" class="ghost small" data-action="edit">Edit</button>
         <button type="button" class="ghost small danger-text" data-action="delete">Delete</button>
       </div>
@@ -352,7 +366,7 @@
           <div class="segmented" role="group" aria-label="Who in your trusted list can see it">
             <button type="button" data-audience="all">All Trusted</button>
             <button type="button" data-audience="picked">Hand-picked</button>
-            <button type="button" data-audience="group" disabled title="Coming soon">Group <span class="soon">soon</span></button>
+            <button type="button" data-audience="groups">Group</button>
           </div>
           <p class="hint audience-summary" hidden></p>
         </div>
@@ -364,17 +378,30 @@
     </li>
   </template>
 
-  <!-- Hand-picked: choose people from Your Task Viewers -->
+  <!-- Picker for Hand-picked people, groups of a task, and new group members -->
   <dialog id="picker" class="card" aria-labelledby="picker-title">
-    <h2 id="picker-title">Hand-pick viewers</h2>
-    <p class="hint">Only the people you tick can see this task. Everyone here is on Your Task Viewers.</p>
-    <input id="picker-search" type="search" placeholder="Search by name or username..." aria-label="Search your task viewers" />
+    <h2 id="picker-title"></h2>
+    <p class="hint" id="picker-hint"></p>
+    <input id="picker-search" type="search" placeholder="Search..." aria-label="Search" />
     <ul id="picker-list" class="picker-list"></ul>
     <p id="picker-empty" class="empty small" hidden></p>
     <div class="picker-foot">
       <span class="hint" id="picker-count"></span>
       <button type="button" class="ghost small" id="picker-cancel">Cancel</button>
       <button type="button" class="small" id="picker-done">Done</button>
+    </div>
+  </dialog>
+
+  <!-- Who can see one of my Trusted tasks -->
+  <dialog id="who" class="card" aria-labelledby="who-title">
+    <h2 id="who-title">Who can see this</h2>
+    <p class="hint" id="who-summary"></p>
+    <div id="who-groups" class="stack tight"></div>
+    <ul id="who-people" class="people compact"></ul>
+    <p id="who-empty" class="empty small" hidden>Nobody can see it right now.</p>
+    <div class="picker-foot">
+      <span class="hint"></span>
+      <button type="button" class="small" id="who-close">Close</button>
     </div>
   </dialog>
 

@@ -102,3 +102,41 @@ CREATE TABLE IF NOT EXISTS task_audience_members (
     viewer_id VARCHAR(50) NOT NULL REFERENCES users(student_id) ON DELETE CASCADE,
     PRIMARY KEY (task_id, viewer_id)
 );
+
+-- social-service: named groups inside an owner's task viewers.
+-- A viewer may be in several groups; viewers in no group form the owner's Default group.
+CREATE TABLE IF NOT EXISTS viewer_groups (
+    id SERIAL PRIMARY KEY,
+    owner_id VARCHAR(50) NOT NULL REFERENCES users(student_id) ON DELETE CASCADE,
+    name VARCHAR(30) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS viewer_groups_owner_name ON viewer_groups (owner_id, lower(name));
+
+CREATE TABLE IF NOT EXISTS viewer_group_members (
+    group_id INT NOT NULL REFERENCES viewer_groups(id) ON DELETE CASCADE,
+    viewer_id VARCHAR(50) NOT NULL REFERENCES users(student_id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, viewer_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_viewer_group_members_viewer ON viewer_group_members (viewer_id);
+
+-- Trusted task audience mode: picked (task_audience_members) or groups (task_audience_groups,
+-- plus the owner's Default group when include_default)
+ALTER TABLE task_audiences ADD COLUMN IF NOT EXISTS mode VARCHAR(10) NOT NULL DEFAULT 'picked';
+ALTER TABLE task_audiences ADD COLUMN IF NOT EXISTS include_default BOOLEAN NOT NULL DEFAULT false;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'task_audiences_mode_check') THEN
+        ALTER TABLE task_audiences ADD CONSTRAINT task_audiences_mode_check CHECK (mode IN ('picked', 'groups'));
+    END IF;
+END $$;
+
+-- a deleted group drops out here; the task then shows to nobody rather than to All Trusted
+CREATE TABLE IF NOT EXISTS task_audience_groups (
+    task_id INT NOT NULL REFERENCES task_audiences(task_id) ON DELETE CASCADE,
+    group_id INT NOT NULL REFERENCES viewer_groups(id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, group_id)
+);

@@ -919,12 +919,6 @@ details.fold.owner-group > summary {
   opacity: 0.5;
 }
 
-.soon {
-  font-size: 10px;
-  margin-left: 4px;
-  opacity: 0.8;
-}
-
 .audience-summary {
   overflow-wrap: anywhere;
 }
@@ -934,15 +928,23 @@ dialog:not([open]) {
   display: none;
 }
 
-#picker {
+#picker,
+#who {
   margin: auto;
   width: min(440px, calc(100% - 32px));
   max-height: calc(100% - 32px);
+  overflow-y: auto;
   color: var(--text);
 }
 
-#picker::backdrop {
+#picker::backdrop,
+#who::backdrop {
   background: rgb(0 0 0 / 0.6);
+}
+
+#who-people:empty,
+#who-groups:empty {
+  display: none;
 }
 
 .picker-list {
@@ -992,6 +994,22 @@ dialog:not([open]) {
 
 .picker-foot .hint {
   margin-right: auto;
+}
+
+/* ---------- groups inside Your Task Viewers ---------- */
+
+.stack.tight {
+  gap: 10px;
+}
+
+.row-actions.start {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+#form-new-group input {
+  flex: 1 1 160px;
+  width: auto;
 }
 
 /* data is refreshing in the background */

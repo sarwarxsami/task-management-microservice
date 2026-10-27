@@ -32,7 +32,8 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
 - **Organising** — summary counts (total, active, completed, due today, overdue), status filter (all / active / completed / overdue), search, sort by newest, deadline, priority or title, overdue and due-soon highlighting.
 - **Usernames** — every user has a unique public username, separate from their name and student ID.
-- **Task visibility** — each task is **Only Me** (default), **Trusted** or **Open**. A Trusted task is shown to **All Trusted** (everyone on Your Task Viewers) or only to **Hand-picked** people chosen from that list in a searchable picker; **Group** is shown as coming soon.
+- **Task visibility** — each task is **Only Me** (default), **Trusted** or **Open**. A Trusted task is shown to **All Trusted** (everyone on Your Task Viewers), only to **Hand-picked** people chosen from that list in a searchable picker, or to one or more **Groups**.
+- **Groups** — inside Your Task Viewers you can create, rename and delete groups and add or remove members; a person can be in several groups, and viewers in no group form the **Default** group. Every Trusted task in My tasks has a **Who can see** button listing its groups (with members) and the Default people one by one.
 - **Your Task Viewers / View Tasks** — choose who can see your Trusted tasks (one-way), and see the tasks of people who added you.
 - **Viewer Access Requests** — ask someone to add you to their Task Viewers; accept or decline requests you receive (with a badge for pending ones).
 - **Discover and Spaces** — browse Listed users and an Open Tasks feed, and open anyone's Space to see what they share. **Listed / Unlisted** controls whether you appear.
@@ -126,12 +127,14 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 | Only Me (default) | the owner only |
 | Trusted · All Trusted | also everyone on the owner's **Your Task Viewers** list |
 | Trusted · Hand-picked | also the people the owner picked, as long as they are still on Your Task Viewers |
+| Trusted · Group | also everyone in the chosen groups (Default = viewers in no group); membership changes apply at once |
 | Open | every logged-in user |
 
 - **Listed** users appear in **Discover**; anyone can open their **Space** (username, name and the tasks they may see, read-only).
 - **Unlisted** users (the default) are hidden from Discover, their Space opens only for themselves, and they cannot receive requests. Their Open tasks still appear in the Open Tasks feed, and they appear in **View Tasks**, as **"User is Unlisted"**.
 - Adding someone to Your Task Viewers is one-way. A **Viewer Access Request** asks someone to add you to theirs.
-- A Hand-picked task stays Hand-picked even if every picked person leaves Your Task Viewers (it is then visible to nobody else), so it never falls back to All Trusted. A new Hand-picked task is saved as Only Me until its audience is stored, so it is never briefly visible to all trusted viewers.
+- A Hand-picked or Group task never falls back to All Trusted: if every picked person leaves Your Task Viewers, or every chosen group is deleted, it is visible to nobody else. A new Hand-picked or Group task is saved as Only Me until its audience is stored, so it is never briefly visible to all trusted viewers.
+- Removing someone from Your Task Viewers also removes them from all of your groups.
 - Other users see usernames, never student IDs. Admins get no extra access here and are treated like everyone else.
 
 | Method | Endpoint | Description |
@@ -150,9 +153,15 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 | POST | `/service/social-service/requests/:id/accept` | Accept (adds the requester to Your Task Viewers) |
 | POST | `/service/social-service/requests/:id/decline` | Decline |
 | DELETE | `/service/social-service/requests/:id` | Cancel a request you sent |
-| GET | `/service/social-service/audiences` | Your Hand-picked tasks → `[{ taskId, people }]` |
-| PUT | `/service/social-service/tasks/:id/audience` | `{ "usernames": ["alice"] }` — make your task Hand-picked (people must be on Your Task Viewers) |
+| GET | `/service/social-service/audiences` | Your Hand-picked and Group tasks → `[{ taskId, mode, people, groups, includeDefault }]` |
+| PUT | `/service/social-service/tasks/:id/audience` | `{ "mode": "picked", "usernames": ["alice"] }` (Hand-picked, people must be on Your Task Viewers) or `{ "mode": "groups", "groupIds": [1], "includeDefault": true }` |
 | DELETE | `/service/social-service/tasks/:id/audience` | Back to All Trusted |
+| GET | `/service/social-service/tasks/:id/who-can-see` | Groups and people who can see one of your Trusted tasks |
+| GET | `/service/social-service/groups` | Your groups with members, and the Default group |
+| POST | `/service/social-service/groups` | `{ "name": "Study" }` — create a group (1-30 chars, unique, not "Default") |
+| PUT / DELETE | `/service/social-service/groups/:id` | Rename / delete a group |
+| POST | `/service/social-service/groups/:id/members` | `{ "usernames": ["alice"] }` — add task viewers to a group |
+| DELETE | `/service/social-service/groups/:id/members/:username` | Remove someone from a group |
 
 ### Internal service-to-service API
 Not routed by Nginx (it only proxies `/service/<name>/...`) and protected by the shared `INTERNAL_API_KEY` header (`X-Internal-Key`).
