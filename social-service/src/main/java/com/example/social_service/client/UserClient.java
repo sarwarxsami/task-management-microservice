@@ -26,6 +26,10 @@ public class UserClient {
         return fetch("ids", ids).stream().collect(Collectors.toMap(UserInfo::studentId, Function.identity()));
     }
 
+    public List<UserInfo> byUsernames(Collection<String> usernames) {
+        return usernames.isEmpty() ? List.of() : fetch("usernames", usernames);
+    }
+
     public UserInfo byUsername(String username) {
         return fetch("usernames", List.of(username)).stream()
                 .filter(u -> username.equalsIgnoreCase(u.username()))

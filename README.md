@@ -32,7 +32,7 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
 - **Organising** — summary counts (total, active, completed, due today, overdue), status filter (all / active / completed / overdue), search, sort by newest, deadline, priority or title, overdue and due-soon highlighting.
 - **Usernames** — every user has a unique public username, separate from their name and student ID.
-- **Task visibility** — each task is **Only Me** (default), **Trusted** or **Open**.
+- **Task visibility** — each task is **Only Me** (default), **Trusted** or **Open**. A Trusted task is shown to **All Trusted** (everyone on Your Task Viewers) or only to **Hand-picked** people chosen from that list in a searchable picker; **Group** is shown as coming soon.
 - **Your Task Viewers / View Tasks** — choose who can see your Trusted tasks (one-way), and see the tasks of people who added you.
 - **Viewer Access Requests** — ask someone to add you to their Task Viewers; accept or decline requests you receive (with a badge for pending ones).
 - **Discover and Spaces** — browse Listed users and an Open Tasks feed, and open anyone's Space to see what they share. **Listed / Unlisted** controls whether you appear.
@@ -124,12 +124,14 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 | Task visibility | Who can see it |
 |---|---|
 | Only Me (default) | the owner only |
-| Trusted | also everyone on the owner's **Your Task Viewers** list |
+| Trusted · All Trusted | also everyone on the owner's **Your Task Viewers** list |
+| Trusted · Hand-picked | also the people the owner picked, as long as they are still on Your Task Viewers |
 | Open | every logged-in user |
 
 - **Listed** users appear in **Discover**; anyone can open their **Space** (username, name and the tasks they may see, read-only).
 - **Unlisted** users (the default) are hidden from Discover, their Space opens only for themselves, and they cannot receive requests. Their Open tasks still appear in the Open Tasks feed, and they appear in **View Tasks**, as **"User is Unlisted"**.
 - Adding someone to Your Task Viewers is one-way. A **Viewer Access Request** asks someone to add you to theirs.
+- A Hand-picked task stays Hand-picked even if every picked person leaves Your Task Viewers (it is then visible to nobody else), so it never falls back to All Trusted. A new Hand-picked task is saved as Only Me until its audience is stored, so it is never briefly visible to all trusted viewers.
 - Other users see usernames, never student IDs. Admins get no extra access here and are treated like everyone else.
 
 | Method | Endpoint | Description |
@@ -148,6 +150,9 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 | POST | `/service/social-service/requests/:id/accept` | Accept (adds the requester to Your Task Viewers) |
 | POST | `/service/social-service/requests/:id/decline` | Decline |
 | DELETE | `/service/social-service/requests/:id` | Cancel a request you sent |
+| GET | `/service/social-service/audiences` | Your Hand-picked tasks → `[{ taskId, people }]` |
+| PUT | `/service/social-service/tasks/:id/audience` | `{ "usernames": ["alice"] }` — make your task Hand-picked (people must be on Your Task Viewers) |
+| DELETE | `/service/social-service/tasks/:id/audience` | Back to All Trusted |
 
 ### Internal service-to-service API
 Not routed by Nginx (it only proxies `/service/<name>/...`) and protected by the shared `INTERNAL_API_KEY` header (`X-Internal-Key`).

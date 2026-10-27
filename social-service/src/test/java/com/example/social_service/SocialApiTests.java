@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -35,6 +36,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 
 import com.example.social_service.client.TaskClient;
 import com.example.social_service.client.TaskInfo;
@@ -63,12 +65,15 @@ class SocialApiTests {
             new UserInfo("s-carol", "Carol", "carol", "user"),
             new UserInfo("s-admin", "Admin", "admin", "admin"));
 
+    // ids are also inserted into the tasks table, which the audience tables reference
+    private static final int ALICE_TRUSTED = 900002;
+    private static final int CAROL_TRUSTED = 900004;
     private static final List<TaskInfo> TASKS = List.of(
-            task(1, "s-alice", "alice private", "only_me"),
-            task(2, "s-alice", "alice trusted", "trusted"),
-            task(3, "s-alice", "alice open", "open"),
-            task(4, "s-carol", "carol trusted", "trusted"),
-            task(5, "s-carol", "carol open", "open"));
+            task(900001, "s-alice", "alice private", "only_me"),
+            task(ALICE_TRUSTED, "s-alice", "alice trusted", "trusted"),
+            task(900003, "s-alice", "alice open", "open"),
+            task(CAROL_TRUSTED, "s-carol", "carol trusted", "trusted"),
+            task(900005, "s-carol", "carol open", "open"));
 
     @Autowired
     private MockMvc mvc;
@@ -92,10 +97,18 @@ class SocialApiTests {
         for (UserInfo u : USERS) {
             jdbc.update("INSERT INTO users (name, student_id) VALUES (?, ?)", u.name(), u.studentId());
         }
+        for (TaskInfo t : TASKS) {
+            jdbc.update("INSERT INTO tasks (id, student_id, task, visibility) VALUES (?, ?, ?, ?)",
+                    t.id(), t.studentId(), t.title(), t.visibility());
+        }
         Map<String, UserInfo> byId = USERS.stream().collect(Collectors.toMap(UserInfo::studentId, Function.identity()));
         when(userClient.byIds(anyCollection())).thenAnswer(inv -> {
             Collection<String> ids = inv.getArgument(0);
             return ids.stream().filter(byId::containsKey).collect(Collectors.toMap(id -> id, byId::get));
+        });
+        when(userClient.byUsernames(anyCollection())).thenAnswer(inv -> {
+            Collection<String> names = inv.getArgument(0);
+            return USERS.stream().filter(u -> names.stream().anyMatch(n -> n.equalsIgnoreCase(u.username()))).toList();
         });
         when(userClient.byUsername(anyString())).thenAnswer(inv -> USERS.stream()
                 .filter(u -> u.username().equalsIgnoreCase(inv.getArgument(0))).findFirst().orElse(null));
@@ -133,6 +146,17 @@ class SocialApiTests {
         mvc.perform(put(BASE + "/settings").header("Authorization", auth)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"listed\":" + listed + "}"))
                 .andExpect(status().isOk());
+    }
+
+    private void addViewer(String auth, String username) throws Exception {
+        mvc.perform(post(BASE + "/viewers").header("Authorization", auth)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"" + username + "\"}"))
+                .andExpect(status().isCreated());
+    }
+
+    private ResultActions pick(String auth, int taskId, String usernamesJson) throws Exception {
+        return mvc.perform(put(BASE + "/tasks/" + taskId + "/audience").header("Authorization", auth)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"usernames\":" + usernamesJson + "}"));
     }
 
     private int sendRequest(String auth, String username) throws Exception {
@@ -355,5 +379,100 @@ class SocialApiTests {
         mvc.perform(post(BASE + "/viewers").header("Authorization", alice)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"ALICE\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void handPickedTrustedTaskIsSeenOnlyByPickedViewers() throws Exception {
+        String alice = token("s-alice", "user");
+        String bob = token("s-bob", "user");
+        String carol = token("s-carol", "user");
+        for (String t : List.of(alice, bob, carol)) {
+            setListed(t, true);
+        }
+        addViewer(alice, "bob");
+        addViewer(alice, "carol");
+
+        // All Trusted: both viewers see it
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice trusted", "alice open")));
+
+        pick(alice, ALICE_TRUSTED, "[\"BOB\"]")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value(ALICE_TRUSTED))
+                .andExpect(jsonPath("$.people[*].username", contains("bob")))
+                .andExpect(jsonPath("$.people[0].studentId").doesNotExist());
+
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice trusted", "alice open")));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")));
+        mvc.perform(get(BASE + "/view-tasks").header("Authorization", carol))
+                .andExpect(jsonPath("$[0].tasks[*].title", containsInAnyOrder("alice open")));
+        mvc.perform(get(BASE + "/view-tasks").header("Authorization", bob))
+                .andExpect(jsonPath("$[0].tasks[*].title", containsInAnyOrder("alice trusted", "alice open")));
+        // the owner still sees everything in their own Space
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", alice))
+                .andExpect(jsonPath("$.tasks", hasSize(3)));
+
+        mvc.perform(get(BASE + "/audiences").header("Authorization", alice))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].taskId").value(ALICE_TRUSTED))
+                .andExpect(jsonPath("$[0].people[*].username", contains("bob")));
+        mvc.perform(get(BASE + "/audiences").header("Authorization", bob))
+                .andExpect(jsonPath("$", hasSize(0)));
+
+        // back to All Trusted
+        mvc.perform(delete(BASE + "/tasks/" + ALICE_TRUSTED + "/audience").header("Authorization", alice))
+                .andExpect(status().isNoContent());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice trusted", "alice open")));
+        mvc.perform(get(BASE + "/audiences").header("Authorization", alice))
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void audienceMustBeYourOwnTaskViewers() throws Exception {
+        String alice = token("s-alice", "user");
+        String bob = token("s-bob", "user");
+        setListed(bob, true);
+        addViewer(alice, "bob");
+
+        pick(alice, ALICE_TRUSTED, "[]").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Pick at least one person"));
+        pick(alice, ALICE_TRUSTED, "[\"carol\"]").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("@carol is not one of your task viewers"));
+        pick(alice, ALICE_TRUSTED, "[\"nobody\"]").andExpect(status().isBadRequest());
+        // only the owner can set it
+        pick(bob, ALICE_TRUSTED, "[\"bob\"]").andExpect(status().isNotFound());
+        pick(alice, CAROL_TRUSTED, "[\"bob\"]").andExpect(status().isNotFound());
+        mvc.perform(delete(BASE + "/tasks/" + ALICE_TRUSTED + "/audience").header("Authorization", bob))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void removedViewerLosesAccessAndTaskStaysHandPicked() throws Exception {
+        String alice = token("s-alice", "user");
+        String bob = token("s-bob", "user");
+        String carol = token("s-carol", "user");
+        for (String t : List.of(alice, bob, carol)) {
+            setListed(t, true);
+        }
+        addViewer(alice, "bob");
+        addViewer(alice, "carol");
+        pick(alice, ALICE_TRUSTED, "[\"bob\"]").andExpect(status().isOk());
+
+        mvc.perform(delete(BASE + "/viewers/bob").header("Authorization", alice)).andExpect(status().isNoContent());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")));
+        mvc.perform(get(BASE + "/audiences").header("Authorization", alice))
+                .andExpect(jsonPath("$[0].people", hasSize(0)));
+        // with nobody left it does not fall back to All Trusted
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")));
+
+        // deleting the task removes its audience
+        jdbc.update("DELETE FROM tasks WHERE id = ?", ALICE_TRUSTED);
+        Integer left = jdbc.queryForObject("SELECT COUNT(*) FROM task_audiences WHERE task_id = ?", Integer.class, ALICE_TRUSTED);
+        assertEquals(0, left);
     }
 }

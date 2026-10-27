@@ -1,8 +1,12 @@
 package com.example.social_service.repository;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -102,6 +106,40 @@ public class SocialRepository {
 
     public void deleteRequest(int id) {
         jdbc.update("DELETE FROM viewer_access_requests WHERE id = ?", id);
+    }
+
+    // ---- Hand-picked audiences (row in task_audiences = Hand-picked, none = All Trusted) ----
+
+    // taskId -> picked student IDs, for the given tasks that are Hand-picked (the set may be empty)
+    public Map<Integer, Set<String>> audiences(Collection<Integer> taskIds) {
+        Map<Integer, Set<String>> result = new HashMap<>();
+        if (taskIds.isEmpty()) {
+            return result;
+        }
+        String in = String.join(",", Collections.nCopies(taskIds.size(), "?"));
+        jdbc.query("""
+                SELECT a.task_id, m.viewer_id FROM task_audiences a
+                LEFT JOIN task_audience_members m ON m.task_id = a.task_id
+                WHERE a.task_id IN (%s)
+                """.formatted(in), rs -> {
+            Set<String> members = result.computeIfAbsent(rs.getInt(1), id -> new HashSet<>());
+            if (rs.getString(2) != null) {
+                members.add(rs.getString(2));
+            }
+        }, taskIds.toArray());
+        return result;
+    }
+
+    public void setAudience(int taskId, Collection<String> viewerIds) {
+        jdbc.update("INSERT INTO task_audiences (task_id) VALUES (?) ON CONFLICT DO NOTHING", taskId);
+        jdbc.update("DELETE FROM task_audience_members WHERE task_id = ?", taskId);
+        for (String viewerId : viewerIds) {
+            jdbc.update("INSERT INTO task_audience_members (task_id, viewer_id) VALUES (?, ?)", taskId, viewerId);
+        }
+    }
+
+    public void clearAudience(int taskId) {
+        jdbc.update("DELETE FROM task_audiences WHERE task_id = ?", taskId);
     }
 
     private AccessRequest mapRequest(java.sql.ResultSet rs, int i) throws java.sql.SQLException {

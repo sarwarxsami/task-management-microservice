@@ -591,6 +591,8 @@ td input {
   font-size: 13px;
   max-width: calc(100% - 32px);
   z-index: 10;
+  /* never blocks taps on whatever is underneath */
+  pointer-events: none;
 }
 
 #toast.err {
@@ -891,6 +893,105 @@ details.fold.sub > .fold-body {
 details.fold.owner-group > summary {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
+}
+
+/* ---------- Trusted audience: All Trusted / Hand-picked / Group ---------- */
+
+.audience {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* the three choices share the form width instead of overflowing it */
+.audience .segmented {
+  align-self: stretch;
+}
+
+.audience .segmented button {
+  flex: 1 1 auto;
+  padding: 7px 4px;
+  font-size: 11px;
+  white-space: normal;
+}
+
+.audience .segmented button:disabled {
+  opacity: 0.5;
+}
+
+.soon {
+  font-size: 10px;
+  margin-left: 4px;
+  opacity: 0.8;
+}
+
+.audience-summary {
+  overflow-wrap: anywhere;
+}
+
+/* .card makes it flex, so the closed dialog has to be hidden again */
+dialog:not([open]) {
+  display: none;
+}
+
+#picker {
+  margin: auto;
+  width: min(440px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  color: var(--text);
+}
+
+#picker::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.picker-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.picker-list:empty {
+  display: none;
+}
+
+.pick {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.pick:has(input:checked) {
+  border-color: var(--accent);
+}
+
+.pick input {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+.pick-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.picker-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.picker-foot .hint {
+  margin-right: auto;
 }
 
 /* data is refreshing in the background */

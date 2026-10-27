@@ -88,3 +88,17 @@ CREATE TABLE IF NOT EXISTS viewer_access_requests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_viewer_requests_owner ON viewer_access_requests (owner_id);
+
+-- social-service: Hand-picked audience of a Trusted task (no row = All Trusted).
+-- The row stays even if every picked person goes, so the task never falls back to All Trusted.
+CREATE TABLE IF NOT EXISTS task_audiences (
+    task_id INT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- picked people; they also have to be on the owner's task viewers to see the task
+CREATE TABLE IF NOT EXISTS task_audience_members (
+    task_id INT NOT NULL REFERENCES task_audiences(task_id) ON DELETE CASCADE,
+    viewer_id VARCHAR(50) NOT NULL REFERENCES users(student_id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, viewer_id)
+);

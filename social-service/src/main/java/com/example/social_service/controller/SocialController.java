@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.social_service.dto.Dtos.Audience;
+import com.example.social_service.dto.Dtos.AudienceBody;
 import com.example.social_service.dto.Dtos.DiscoverEntry;
 import com.example.social_service.dto.Dtos.OpenTask;
 import com.example.social_service.dto.Dtos.Requests;
@@ -118,6 +120,22 @@ public class SocialController {
     @DeleteMapping("/requests/{id}")
     public ResponseEntity<Void> cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable int id) {
         service.cancelRequest(caller(jwt), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/audiences")
+    public List<Audience> audiences(@AuthenticationPrincipal Jwt jwt) {
+        return service.audiences(caller(jwt));
+    }
+
+    @PutMapping("/tasks/{id}/audience")
+    public Audience setAudience(@AuthenticationPrincipal Jwt jwt, @PathVariable int id, @RequestBody AudienceBody body) {
+        return service.setAudience(caller(jwt), id, body.usernames());
+    }
+
+    @DeleteMapping("/tasks/{id}/audience")
+    public ResponseEntity<Void> clearAudience(@AuthenticationPrincipal Jwt jwt, @PathVariable int id) {
+        service.clearAudience(caller(jwt), id);
         return ResponseEntity.noContent().build();
     }
 

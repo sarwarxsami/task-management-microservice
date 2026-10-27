@@ -86,6 +86,14 @@
               <option value="open">Open (everyone)</option>
             </select>
           </label>
+          <div class="audience" hidden>
+            <div class="segmented" role="group" aria-label="Who in your trusted list can see it">
+              <button type="button" data-audience="all">All Trusted</button>
+              <button type="button" data-audience="picked">Hand-picked</button>
+              <button type="button" data-audience="group" disabled title="Coming soon">Group <span class="soon">soon</span></button>
+            </div>
+            <p class="hint audience-summary" hidden></p>
+          </div>
           <button type="submit">Add task</button>
         </form>
       </section>
@@ -340,6 +348,14 @@
             <option value="open">Open</option>
           </select>
         </div>
+        <div class="audience" hidden>
+          <div class="segmented" role="group" aria-label="Who in your trusted list can see it">
+            <button type="button" data-audience="all">All Trusted</button>
+            <button type="button" data-audience="picked">Hand-picked</button>
+            <button type="button" data-audience="group" disabled title="Coming soon">Group <span class="soon">soon</span></button>
+          </div>
+          <p class="hint audience-summary" hidden></p>
+        </div>
         <div class="row end">
           <button type="button" class="ghost small" data-action="cancel">Cancel</button>
           <button type="submit" class="small">Save</button>
@@ -347,6 +363,20 @@
       </form>
     </li>
   </template>
+
+  <!-- Hand-picked: choose people from Your Task Viewers -->
+  <dialog id="picker" class="card" aria-labelledby="picker-title">
+    <h2 id="picker-title">Hand-pick viewers</h2>
+    <p class="hint">Only the people you tick can see this task. Everyone here is on Your Task Viewers.</p>
+    <input id="picker-search" type="search" placeholder="Search by name or username..." aria-label="Search your task viewers" />
+    <ul id="picker-list" class="picker-list"></ul>
+    <p id="picker-empty" class="empty small" hidden></p>
+    <div class="picker-foot">
+      <span class="hint" id="picker-count"></span>
+      <button type="button" class="ghost small" id="picker-cancel">Cancel</button>
+      <button type="button" class="small" id="picker-done">Done</button>
+    </div>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

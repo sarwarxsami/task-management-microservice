@@ -10,6 +10,7 @@ const state = {
   token: null,
   user: null,
   tasks: [],
+  audiences: new Map(), // taskId -> picked people of my Hand-picked tasks
   users: [],
   status: "all",
   view: "tasks",
@@ -275,7 +276,16 @@ $("form-register").addEventListener("submit", (e) => {
 // ---------- tasks ----------
 
 async function loadTasks() {
-  state.tasks = await api(`${TASKS}/tasks`);
+  const [tasks, audiences] = await Promise.all([
+    api(`${TASKS}/tasks`),
+    // tasks still show if social-service is down; they just lose the Hand-picked label
+    api(`${SOCIAL}/audiences`).catch((err) => {
+      if (err.sessionExpired) throw err;
+      return [];
+    }),
+  ]);
+  state.tasks = tasks;
+  state.audiences = new Map(audiences.map((a) => [a.taskId, a.people]));
   renderTasks();
 }
 
@@ -338,7 +348,7 @@ function renderTask(task) {
 
   item.querySelector(".task-title").textContent = task.title;
 
-  fillTaskPills(item, task);
+  fillTaskPills(item, task, state.audiences.get(task.id));
 
   item.querySelector('[data-action="edit"]').addEventListener("click", () => {
     item.replaceWith(renderEditor(task));
@@ -347,8 +357,9 @@ function renderTask(task) {
   return item;
 }
 
-// Priority, visibility, due date and description, shared by own and others' tasks
-function fillTaskPills(item, task) {
+// Priority, visibility, due date and description, shared by own and others' tasks.
+// audience: picked people when it is one of my Hand-picked tasks
+function fillTaskPills(item, task, audience) {
   const priority = item.querySelector(".priority");
   priority.textContent = task.priority;
   priority.classList.add(task.priority);
@@ -356,6 +367,10 @@ function fillTaskPills(item, task) {
   const visibility = item.querySelector(".visibility");
   visibility.textContent = VISIBILITY_LABEL[task.visibility] || task.visibility;
   visibility.classList.add(`vis-${task.visibility}`);
+  if (task.visibility === "trusted" && audience) {
+    visibility.textContent = `Hand-picked · ${audience.length}`;
+    visibility.title = audience.map((p) => `@${p.username}`).join(", ") || "Nobody picked is still on Your Task Viewers";
+  }
 
   const due = dueInfo(task);
   if (due) {
@@ -380,23 +395,15 @@ function renderEditor(task) {
   form.elements.deadline.value = task.deadline || "";
   form.elements.priority.value = task.priority;
   form.elements.visibility.value = task.visibility || "only_me";
+  const picked = state.audiences.get(task.id);
+  setupAudience(form, picked ? { mode: "picked", people: picked } : undefined);
 
   item.querySelector('[data-action="cancel"]').addEventListener("click", renderTasks);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     withBusy(form, async () => {
-      const data = formData(form);
-      const updated = await api(`${TASKS}/tasks/${task.id}`, {
-        method: "PUT",
-        body: {
-          title: data.title,
-          description: data.description,
-          deadline: data.deadline || null,
-          priority: data.priority,
-          visibility: data.visibility,
-        },
-      });
-      replaceTask(updated);
+      await saveTask(task, taskBody(form), form.audience);
+      await loadTasks();
       toast("Task updated");
     });
   });
@@ -440,21 +447,15 @@ $("form-task").addEventListener("submit", (e) => {
   e.preventDefault();
   const form = e.currentTarget;
   withBusy(form, async () => {
-    const data = formData(form);
-    const body = {
-      title: data.title,
-      description: data.description,
-      deadline: data.deadline || null,
-      priority: data.priority,
-      visibility: data.visibility,
-    };
-
-    await api(`${TASKS}/tasks`, { method: "POST", body });
+    await saveTask(null, taskBody(form), form.audience);
     form.reset();
+    form.resetAudience();
     await loadTasks();
     toast("Task added");
   });
 });
+
+setupAudience($("form-task"));
 
 $("btn-clear-done").addEventListener("click", async () => {
   if (!confirm("Delete all of your completed tasks?")) return;
@@ -477,6 +478,157 @@ document.querySelectorAll(".segmented [data-status]").forEach((btn) => {
 
 $("filter-search").addEventListener("input", renderTasks);
 $("filter-sort").addEventListener("change", renderTasks);
+
+// ---------- Trusted audience: All Trusted / Hand-picked / Group ----------
+
+function taskBody(form) {
+  const data = formData(form);
+  return {
+    title: data.title,
+    description: data.description,
+    deadline: data.deadline || null,
+    priority: data.priority,
+    visibility: data.visibility,
+  };
+}
+
+// Creates (task = null) or updates a task together with its Hand-picked audience.
+// A new Hand-picked task is created as Only Me and opened up only after its audience is stored,
+// so it is never visible to all trusted viewers, not even for a moment.
+async function saveTask(task, body, audience) {
+  const picked = body.visibility === "trusted" && audience.mode === "picked";
+  const setAudience = (id) => api(`${SOCIAL}/tasks/${id}/audience`, {
+    method: "PUT",
+    body: { usernames: audience.people.map((p) => p.username) },
+  });
+
+  if (!task) {
+    if (!picked) return api(`${TASKS}/tasks`, { method: "POST", body });
+    const created = await api(`${TASKS}/tasks`, { method: "POST", body: { ...body, visibility: "only_me" } });
+    await setAudience(created.id);
+    return api(`${TASKS}/tasks/${created.id}`, { method: "PUT", body });
+  }
+
+  if (picked) {
+    await setAudience(task.id);
+    return api(`${TASKS}/tasks/${task.id}`, { method: "PUT", body });
+  }
+  const updated = await api(`${TASKS}/tasks/${task.id}`, { method: "PUT", body });
+  if (state.audiences.has(task.id)) {
+    await api(`${SOCIAL}/tasks/${task.id}/audience`, { method: "DELETE" });
+  }
+  return updated;
+}
+
+// Wires the audience row of a task form; form.audience = { mode: "all" | "picked", people: [{ username, name }] }
+function setupAudience(form, initial = { mode: "all", people: [] }) {
+  const box = form.querySelector(".audience");
+  const visibility = form.elements.visibility;
+  form.audience = initial;
+
+  const render = () => {
+    box.hidden = visibility.value !== "trusted";
+    box.querySelectorAll("[data-audience]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.audience === form.audience.mode);
+    });
+
+    const summary = box.querySelector(".audience-summary");
+    const people = form.audience.people;
+    summary.hidden = form.audience.mode !== "picked";
+    summary.replaceChildren();
+    if (form.audience.mode === "picked") {
+      const change = el("button", "link", "Change");
+      change.type = "button";
+      change.addEventListener("click", pick);
+      const names = people.map((p) => `@${p.username}`).join(", ");
+      summary.append(`${plural(people.length, "person", "people")}${names ? `: ${names}` : ""} · `, change);
+    }
+  };
+
+  const pick = async () => {
+    const people = await pickViewers(form.audience.people);
+    if (people) form.audience = { mode: "picked", people };
+    render();
+  };
+
+  visibility.addEventListener("change", render);
+  box.querySelector('[data-audience="all"]').addEventListener("click", () => {
+    form.audience = { mode: "all", people: [] };
+    render();
+  });
+  box.querySelector('[data-audience="picked"]').addEventListener("click", pick);
+  form.resetAudience = () => {
+    form.audience = { mode: "all", people: [] };
+    render();
+  };
+  render();
+}
+
+// Opens the picker over Your Task Viewers; resolves to the chosen people, or null when cancelled
+async function pickViewers(selected) {
+  let viewers;
+  try {
+    viewers = (await api(`${SOCIAL}/viewers`)).map((v) => v.person);
+  } catch (err) {
+    reportError(err);
+    return null;
+  }
+
+  const dialog = $("picker");
+  const search = $("picker-search");
+  const chosen = new Set(selected.map((p) => p.username));
+
+  const count = () => {
+    $("picker-count").textContent = `${chosen.size} selected`;
+    $("picker-done").disabled = chosen.size === 0;
+  };
+  const draw = () => {
+    const q = search.value.trim().toLowerCase().replace(/^@/, "");
+    const shown = viewers.filter((p) => !q || `${p.name} ${p.username}`.toLowerCase().includes(q));
+    $("picker-list").replaceChildren(...shown.map((p) => {
+      const box = el("input");
+      box.type = "checkbox";
+      box.checked = chosen.has(p.username);
+      box.addEventListener("change", () => {
+        if (box.checked) chosen.add(p.username);
+        else chosen.delete(p.username);
+        count();
+      });
+      const label = el("label", "pick");
+      label.append(box, el("span", "pick-name", p.name), el("span", "muted", `@${p.username}`));
+      const li = el("li");
+      li.append(label);
+      return li;
+    }));
+    const empty = $("picker-empty");
+    empty.hidden = shown.length > 0;
+    empty.textContent = viewers.length === 0
+      ? "Your Task Viewers list is empty. Add people on the Viewers page first."
+      : "Nobody matches your search.";
+  };
+
+  search.value = "";
+  search.oninput = draw;
+  draw();
+  count();
+  dialog.showModal();
+  search.focus();
+
+  return new Promise((resolve) => {
+    const finish = (result) => {
+      dialog.close();
+      resolve(result);
+    };
+    $("picker-done").onclick = () => finish(viewers
+      .filter((p) => chosen.has(p.username))
+      .map((p) => ({ username: p.username, name: p.name })));
+    $("picker-cancel").onclick = () => finish(null);
+    dialog.oncancel = (e) => {
+      e.preventDefault();
+      finish(null);
+    };
+  });
+}
 
 // ---------- account ----------
 

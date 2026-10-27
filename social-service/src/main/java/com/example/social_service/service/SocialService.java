@@ -1,7 +1,9 @@
 package com.example.social_service.service;
 
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,6 +18,7 @@ import com.example.social_service.client.TaskClient;
 import com.example.social_service.client.TaskInfo;
 import com.example.social_service.client.UserClient;
 import com.example.social_service.client.UserInfo;
+import com.example.social_service.dto.Dtos.Audience;
 import com.example.social_service.dto.Dtos.DiscoverEntry;
 import com.example.social_service.dto.Dtos.OpenTask;
 import com.example.social_service.dto.Dtos.Person;
@@ -34,7 +37,8 @@ import com.example.social_service.repository.SocialRepository.Link;
 /*
  * Visibility rules
  *   only_me  - the owner only
- *   trusted  - also users on the owner's Your Task Viewers list
+ *   trusted  - also users on the owner's Your Task Viewers list (All Trusted), or only the
+ *              Hand-picked ones among them when the task has an audience
  *   open     - every logged-in user; an Unlisted owner is shown as "User is Unlisted"
  * Unlisted users are hidden from Discover, their Space opens only for themselves, and they cannot receive requests.
  * Admins get no extra access here: they are treated like every other user.
@@ -49,6 +53,7 @@ public class SocialService {
     private static final List<String> TRUSTED_AND_OPEN = List.of("trusted", "open");
     private static final List<String> OPEN = List.of("open");
     private static final int OPEN_FEED_LIMIT = 100;
+    private static final int MAX_AUDIENCE = 200;
 
     private final SocialRepository repo;
     private final UserClient users;
@@ -109,7 +114,8 @@ public class SocialService {
 
         Relationship relationship = relations(caller).with(target.studentId());
         List<String> visibilities = self ? ALL : relationship.addedMe() ? TRUSTED_AND_OPEN : OPEN;
-        List<SharedTask> shared = tasks.tasks(List.of(target.studentId()), visibilities).stream()
+        List<TaskInfo> found = tasks.tasks(List.of(target.studentId()), visibilities);
+        List<SharedTask> shared = (self ? found : visibleTo(caller, found)).stream()
                 .map(SharedTask::of)
                 .toList();
 
@@ -160,7 +166,7 @@ public class SocialService {
         }
         Map<String, UserInfo> info = users.byIds(ids(links));
         Set<String> listed = repo.listedIds();
-        Map<String, List<SharedTask>> byOwner = tasks.tasks(ids(links), TRUSTED_AND_OPEN).stream()
+        Map<String, List<SharedTask>> byOwner = visibleTo(caller, tasks.tasks(ids(links), TRUSTED_AND_OPEN)).stream()
                 .collect(Collectors.groupingBy(TaskInfo::studentId,
                         Collectors.mapping(SharedTask::of, Collectors.toList())));
 
@@ -226,7 +232,83 @@ public class SocialService {
         repo.deleteRequest(request.id());
     }
 
+    // ---- Hand-picked audiences of my Trusted tasks ----
+
+    public List<Audience> audiences(Caller caller) {
+        List<Integer> mine = tasks.tasks(List.of(caller.studentId()), ALL).stream().map(TaskInfo::id).toList();
+        Map<Integer, Set<String>> picked = repo.audiences(mine);
+        if (picked.isEmpty()) {
+            return List.of();
+        }
+        Set<String> viewers = ids(repo.viewersOf(caller.studentId()));
+        Map<String, UserInfo> info = users.byIds(viewers);
+        Set<String> listed = repo.listedIds();
+
+        // people who left Your Task Viewers no longer count
+        return picked.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(e -> new Audience(e.getKey(), e.getValue().stream()
+                        .filter(info::containsKey)
+                        .map(id -> person(info.get(id), listed.contains(id)))
+                        .sorted(Comparator.comparing(Person::username))
+                        .toList()))
+                .toList();
+    }
+
+    @Transactional
+    public Audience setAudience(Caller caller, int taskId, List<String> usernames) {
+        requireOwnTask(caller, taskId);
+        if (usernames == null || usernames.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Pick at least one person");
+        }
+        if (usernames.size() > MAX_AUDIENCE) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Pick at most " + MAX_AUDIENCE + " people");
+        }
+
+        Map<String, UserInfo> byUsername = users.byUsernames(usernames.stream().map(String::trim).toList()).stream()
+                .collect(Collectors.toMap(u -> u.username().toLowerCase(), u -> u, (a, b) -> a));
+        Set<String> viewers = ids(repo.viewersOf(caller.studentId()));
+        Set<String> listed = repo.listedIds();
+        Map<String, UserInfo> picked = new LinkedHashMap<>();
+        for (String username : usernames) {
+            UserInfo u = byUsername.get(username.trim().toLowerCase());
+            if (u == null || !viewers.contains(u.studentId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "@" + username.trim() + " is not one of your task viewers");
+            }
+            picked.put(u.studentId(), u);
+        }
+
+        repo.setAudience(taskId, picked.keySet());
+        return new Audience(taskId, picked.values().stream()
+                .map(u -> person(u, listed.contains(u.studentId())))
+                .sorted(Comparator.comparing(Person::username))
+                .toList());
+    }
+
+    // Back to All Trusted
+    public void clearAudience(Caller caller, int taskId) {
+        requireOwnTask(caller, taskId);
+        repo.clearAudience(taskId);
+    }
+
     // ---- helpers ----
+
+    // Drops Hand-picked Trusted tasks the caller was not picked for
+    private List<TaskInfo> visibleTo(Caller caller, List<TaskInfo> found) {
+        List<Integer> trusted = found.stream().filter(t -> "trusted".equals(t.visibility())).map(TaskInfo::id).toList();
+        Map<Integer, Set<String>> picked = repo.audiences(trusted);
+        return found.stream()
+                .filter(t -> !"trusted".equals(t.visibility()) || !picked.containsKey(t.id())
+                        || picked.get(t.id()).contains(caller.studentId()))
+                .toList();
+    }
+
+    private void requireOwnTask(Caller caller, int taskId) {
+        boolean mine = tasks.tasks(List.of(caller.studentId()), ALL).stream().anyMatch(t -> t.id() == taskId);
+        if (!mine) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Task not found");
+        }
+    }
 
     private AccessRequest requestAddressedTo(Caller caller, int id) {
         return repo.findRequest(id)

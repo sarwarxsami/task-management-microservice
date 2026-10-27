@@ -57,6 +57,13 @@ public final class Dtos {
     public record Requests(List<RequestEntry> incoming, List<RequestEntry> outgoing) {
     }
 
+    // Hand-picked audience of one of my Trusted tasks (only people still on my task viewers)
+    public record Audience(int taskId, List<Person> people) {
+    }
+
+    public record AudienceBody(List<String> usernames) {
+    }
+
     public record Settings(Boolean listed) {
     }
 
