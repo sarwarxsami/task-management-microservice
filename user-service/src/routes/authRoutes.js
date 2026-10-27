@@ -3,8 +3,7 @@ const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const pool = require('../models/db');
-const { ADMIN_STUDENT_IDS } = require('../config');
-const { signToken, requireAuth } = require('../middleware/auth');
+const { roleFor, signToken, requireAuth } = require('../middleware/auth');
 const { validName, validStudentId, validPassword, normalizeUsername, validUsername } = require('../validation');
 
 const authLimiter = rateLimit({
@@ -22,11 +21,12 @@ function publicUser(row) {
     return { name: row.name, studentId: row.student_id, username: row.username, role: row.role };
 }
 
-// Admins are bootstrapped from ADMIN_STUDENT_IDS
-async function syncAdminRole(user) {
-    if (ADMIN_STUDENT_IDS.includes(user.student_id) && user.role !== "admin") {
-        await pool.query("UPDATE users SET role = 'admin' WHERE student_id = $1", [user.student_id]);
-        user.role = "admin";
+// Keeps the stored role in step with ADMIN_STUDENT_IDS, promoting and demoting
+async function syncRole(user) {
+    const role = roleFor(user.student_id);
+    if (user.role !== role) {
+        await pool.query("UPDATE users SET role = $1 WHERE student_id = $2", [role, user.student_id]);
+        user.role = role;
     }
     return user;
 }
@@ -67,7 +67,7 @@ router.post("/register", authLimiter, async (req, res) => {
         return res.status(409).json({ error: "User already registered" });
     }
 
-    const user = await syncAdminRole(result.rows[0]);
+    const user = await syncRole(result.rows[0]);
     return res.status(201).json({ token: signToken(user), user: publicUser(user) });
 });
 
@@ -89,7 +89,7 @@ router.post("/login", authLimiter, async (req, res) => {
         return res.status(401).json({ error: "Invalid student ID or password" });
     }
 
-    await syncAdminRole(user);
+    await syncRole(user);
     return res.json({ token: signToken(user), user: publicUser(user) });
 });
 
@@ -104,7 +104,7 @@ router.get("/me", requireAuth, async (req, res) => {
         return res.status(401).json({ error: "Account no longer exists" });
     }
 
-    return res.json(publicUser(result.rows[0]));
+    return res.json(publicUser(await syncRole(result.rows[0])));
 });
 
 module.exports = { router, publicUser, USERNAME_TAKEN };

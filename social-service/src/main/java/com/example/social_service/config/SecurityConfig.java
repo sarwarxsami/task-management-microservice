@@ -9,10 +9,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -40,11 +47,19 @@ public class SecurityConfig {
 
     // Tokens are issued by user-service and signed with the shared JWT_SECRET (HS256)
     @Bean
-    public JwtDecoder jwtDecoder(@Value("${app.jwt.secret}") String secret) {
+    public JwtDecoder jwtDecoder(@Value("${app.jwt.secret}") String secret, JdbcTemplate jdbc) {
         if (secret == null || secret.length() < 32) {
             throw new IllegalStateException("JWT_SECRET must be set and at least 32 characters long");
         }
         var key = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-        return NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build();
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build();
+
+        // Tokens of deleted accounts stop working at once instead of at expiry
+        OAuth2TokenValidator<Jwt> accountExists = jwt -> Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM users WHERE student_id = ?)", Boolean.class, jwt.getSubject()))
+                        ? OAuth2TokenValidatorResult.success()
+                        : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Account no longer exists", null));
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefault(), accountExists));
+        return decoder;
     }
 }

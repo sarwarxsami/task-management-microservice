@@ -167,10 +167,7 @@ async function startSession(restore = false) {
   $("nav-role").textContent = state.user.role;
   $("nav-role").className = "badge " + state.user.role;
   $("nav-admin").hidden = !isAdmin();
-  $("filter-user").hidden = !isAdmin();
-  $("task-owner-field").hidden = !isAdmin();
 
-  if (isAdmin()) await loadUsers();
   await loadTasks();
   refreshRequestBadge();
 
@@ -277,14 +274,8 @@ $("form-register").addEventListener("submit", (e) => {
 
 // ---------- tasks ----------
 
-function selectedOwner() {
-  return isAdmin() ? $("filter-user").value : "";
-}
-
 async function loadTasks() {
-  const owner = selectedOwner();
-  const query = owner === "__all" ? "" : `?studentId=${encodeURIComponent(owner || state.user.studentId)}`;
-  state.tasks = await api(`${TASKS}/tasks${query}`);
+  state.tasks = await api(`${TASKS}/tasks`);
   renderTasks();
 }
 
@@ -296,7 +287,7 @@ function visibleTasks() {
     if (state.status === "active" && t.completed) return false;
     if (state.status === "completed" && !t.completed) return false;
     if (state.status === "overdue" && !isOverdue(t)) return false;
-    if (q && !`${t.title} ${t.description || ""} ${t.studentId}`.toLowerCase().includes(q)) return false;
+    if (q && !`${t.title} ${t.description || ""}`.toLowerCase().includes(q)) return false;
     return true;
   });
 
@@ -325,10 +316,7 @@ function renderStats() {
 function renderTasks() {
   renderStats();
 
-  const owner = selectedOwner();
-  const ownerName = state.users.find((u) => u.studentId === owner)?.name;
-  $("tasks-title").textContent = owner === "__all" ? "All tasks" : ownerName && owner !== state.user.studentId ? `${ownerName}'s tasks` : "My tasks";
-  $("btn-clear-done").hidden = !state.tasks.some((t) => t.completed && t.studentId === state.user.studentId);
+  $("btn-clear-done").hidden = !state.tasks.some((t) => t.completed);
 
   const list = $("task-list");
   const tasks = visibleTasks();
@@ -351,13 +339,6 @@ function renderTask(task) {
   item.querySelector(".task-title").textContent = task.title;
 
   fillTaskPills(item, task);
-
-  if (isAdmin() && task.studentId !== state.user.studentId) {
-    const pill = item.querySelector(".owner");
-    pill.textContent = state.users.find((u) => u.studentId === task.studentId)?.name || task.studentId;
-    pill.title = task.studentId;
-    pill.hidden = false;
-  }
 
   item.querySelector('[data-action="edit"]').addEventListener("click", () => {
     item.replaceWith(renderEditor(task));
@@ -467,11 +448,9 @@ $("form-task").addEventListener("submit", (e) => {
       priority: data.priority,
       visibility: data.visibility,
     };
-    if (isAdmin() && data.studentId) body.studentId = data.studentId;
 
     await api(`${TASKS}/tasks`, { method: "POST", body });
     form.reset();
-    if (isAdmin()) form.elements.studentId.value = state.user.studentId;
     await loadTasks();
     toast("Task added");
   });
@@ -498,7 +477,6 @@ document.querySelectorAll(".segmented [data-status]").forEach((btn) => {
 
 $("filter-search").addEventListener("input", renderTasks);
 $("filter-sort").addEventListener("change", renderTasks);
-$("filter-user").addEventListener("change", () => loadTasks().catch(reportError));
 
 // ---------- account ----------
 
@@ -557,106 +535,28 @@ $("btn-delete-account").addEventListener("click", async () => {
 });
 
 // ---------- admin ----------
+// Admins see only each account's name and username, and can delete accounts; nothing else
 
 async function loadUsers() {
   state.users = await api(`${USERS}/users`);
-  const allTasks = await api(`${TASKS}/tasks`);
-  for (const u of state.users) {
-    const mine = allTasks.filter((t) => t.studentId === u.studentId);
-    u.taskCount = mine.length;
-    u.doneCount = mine.filter((t) => t.completed).length;
-  }
-  fillUserSelects();
-}
-
-function fillUserSelects() {
-  const filter = $("filter-user");
-  const previous = filter.value || state.user.studentId;
-  const owner = $("form-task").elements.studentId;
-
-  const options = (includeAll) => {
-    const opts = [];
-    if (includeAll) opts.push(new Option("All users", "__all"));
-    for (const u of state.users) {
-      const label = u.studentId === state.user.studentId ? `${u.name} (me)` : `${u.name} · ${u.studentId}`;
-      opts.push(new Option(label, u.studentId));
-    }
-    return opts;
-  };
-
-  filter.replaceChildren(...options(true));
-  filter.value = [...filter.options].some((o) => o.value === previous) ? previous : state.user.studentId;
-  owner.replaceChildren(...options(false));
-  owner.value = state.user.studentId;
 }
 
 function renderUsers() {
-  const rows = $("user-rows");
   $("admin-count").textContent = `${state.users.length} users`;
 
-  rows.replaceChildren(...state.users.map((u) => {
+  $("user-rows").replaceChildren(...state.users.map((u) => {
     const tr = document.createElement("tr");
-    const self = u.studentId === state.user.studentId;
-
-    const nameCell = el("td");
-    const name = el("span", null, u.name);
-    nameCell.append(name);
-    if (!u.hasPassword) nameCell.append(" ", el("span", "pill", "no password"));
-
-    const roleCell = el("td");
-    roleCell.append(el("span", `badge ${u.role}`, u.role));
-
-    const joined = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "";
-    tr.append(
-      nameCell,
-      el("td", "mono", u.username ? `@${u.username}` : "—"),
-      el("td", "mono", u.studentId),
-      roleCell,
-      el("td", null, `${u.doneCount}/${u.taskCount} done`),
-      el("td", "muted", joined),
-    );
-
-    const actions = el("td", "actions");
-    const view = el("button", "ghost small", "Tasks");
-    view.type = "button";
-    view.addEventListener("click", async () => {
-      $("filter-user").value = u.studentId;
-      showView("tasks");
-      await loadTasks().catch(reportError);
-    });
-
-    const space = el("button", "ghost small", "Space");
-    space.type = "button";
-    space.disabled = !u.username;
-    space.addEventListener("click", () => openSpace(u.username));
-
-    const rename = el("button", "ghost small", "Rename");
-    rename.type = "button";
-    rename.addEventListener("click", () => {
-      const input = el("input");
-      input.value = u.name;
-      input.maxLength = 100;
-      input.setAttribute("aria-label", "New name");
-      const save = el("button", "small", "Save");
-      save.type = "button";
-      save.addEventListener("click", () => adminUpdate(u, { name: input.value }, "Name updated"));
-      input.addEventListener("keydown", (e) => { if (e.key === "Enter") save.click(); if (e.key === "Escape") renderUsers(); });
-      nameCell.replaceChildren(input, save);
-      input.focus();
-    });
-
-    const role = el("button", "ghost small", u.role === "admin" ? "Make user" : "Make admin");
-    role.type = "button";
-    role.disabled = self;
-    role.addEventListener("click", () => adminUpdate(u, { role: u.role === "admin" ? "user" : "admin" }, "Role updated"));
+    const self = u.username !== null && u.username === state.user.username;
+    const label = u.username ? `@${u.username}` : "no username";
 
     const del = el("button", "ghost small danger-text", "Delete");
     del.type = "button";
     del.disabled = self;
+    if (self) del.title = "Delete your own account from the Account page";
     del.addEventListener("click", async () => {
-      if (!confirm(`Delete ${u.name} (${u.studentId}) and all of their tasks?`)) return;
+      if (!confirm(`Delete ${u.name} (${label}) and all of their tasks?`)) return;
       try {
-        await api(`${USERS}/users/${encodeURIComponent(u.studentId)}`, { method: "DELETE" });
+        await api(`${USERS}/users/by-id/${encodeURIComponent(u.id)}`, { method: "DELETE" });
         await loadUsers();
         renderUsers();
         toast("User deleted");
@@ -665,23 +565,18 @@ function renderUsers() {
       }
     });
 
+    const actions = el("td", "actions");
     const group = el("div", "row-actions");
-    group.append(view, space, rename, role, del);
+    group.append(del);
     actions.append(group);
-    tr.append(actions);
+
+    tr.append(
+      el("td", null, self ? `${u.name} (me)` : u.name),
+      el("td", u.username ? "mono" : "muted", u.username ? `@${u.username}` : "—"),
+      actions,
+    );
     return tr;
   }));
-}
-
-async function adminUpdate(user, body, message) {
-  try {
-    await api(`${USERS}/users/${encodeURIComponent(user.studentId)}`, { method: "PUT", body });
-    await loadUsers();
-    renderUsers();
-    toast(message);
-  } catch (err) {
-    reportError(err);
-  }
 }
 
 // ---------- social: shared helpers ----------
@@ -699,10 +594,9 @@ function personLink(person) {
   }
   const name = el("button", "link", person.name);
   name.type = "button";
-  name.disabled = !person.listed && !isAdmin();
+  name.disabled = !person.listed;
   name.addEventListener("click", () => openSpace(person.username));
   box.append(name, el("span", "muted", `@${person.username}`));
-  if (person.studentId) box.append(el("span", "muted", `· ${person.studentId}`));
   if (!person.listed) box.append(el("span", "pill", "unlisted"));
   return box;
 }
@@ -865,9 +759,7 @@ function renderSpace() {
   const { person, self, relationship, tasks } = state.space;
 
   $("space-name").textContent = person.name;
-  const meta = [`@${person.username}`, person.listed ? "Listed" : "Unlisted"];
-  if (person.studentId) meta.push(person.studentId);
-  $("space-meta").textContent = meta.join(" · ");
+  $("space-meta").textContent = `@${person.username} · ${person.listed ? "Listed" : "Unlisted"}`;
 
   const actions = $("space-actions");
   actions.replaceChildren();

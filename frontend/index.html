@@ -86,16 +86,13 @@
               <option value="open">Open (everyone)</option>
             </select>
           </label>
-          <label id="task-owner-field" hidden>Assign to
-            <select name="studentId"></select>
-          </label>
           <button type="submit">Add task</button>
         </form>
       </section>
 
       <section class="card">
         <div class="card-head">
-          <h2 id="tasks-title">My tasks</h2>
+          <h2>My tasks</h2>
           <button type="button" class="ghost small" id="btn-clear-done">Clear completed</button>
         </div>
 
@@ -107,7 +104,6 @@
             <option value="priority">Priority</option>
             <option value="title">Title</option>
           </select>
-          <select id="filter-user" aria-label="Show tasks of" hidden></select>
         </div>
 
         <div class="segmented" role="tablist" aria-label="Filter by status">
@@ -247,7 +243,7 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Name</th><th>Username</th><th>Student ID</th><th>Role</th><th>Tasks</th><th>Joined</th><th></th></tr>
+            <tr><th>Name</th><th>Username</th><th></th></tr>
           </thead>
           <tbody id="user-rows"></tbody>
         </table>
@@ -264,7 +260,6 @@
           <span class="pill priority"></span>
           <span class="pill visibility"></span>
           <span class="pill due" hidden></span>
-          <span class="pill owner" hidden></span>
         </div>
         <p class="task-desc" hidden></p>
       </div>

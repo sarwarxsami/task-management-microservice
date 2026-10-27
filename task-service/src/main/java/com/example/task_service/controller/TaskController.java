@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.task_service.dto.StatusRequest;
@@ -23,8 +22,8 @@ import com.example.task_service.dto.TaskRequest;
 import com.example.task_service.exception.ApiException;
 import com.example.task_service.model.Task;
 import com.example.task_service.service.TaskService;
-import com.example.task_service.service.TaskService.Caller;
 
+// Every user, admins included, works only on their own tasks
 @RestController
 @RequestMapping("/service/task-service")
 public class TaskController {
@@ -40,20 +39,19 @@ public class TaskController {
     }
 
     @GetMapping("/tasks")
-    public List<Task> getTasks(@AuthenticationPrincipal Jwt jwt,
-            @RequestParam(required = false) String studentId) {
-        return service.getTasks(caller(jwt), studentId);
+    public List<Task> getTasks(@AuthenticationPrincipal Jwt jwt) {
+        return service.getTasks(jwt.getSubject());
     }
 
     @PostMapping("/tasks")
     public ResponseEntity<Task> addTask(@AuthenticationPrincipal Jwt jwt, @RequestBody TaskRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.addTask(caller(jwt), request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.addTask(jwt.getSubject(), request));
     }
 
     @PutMapping("/tasks/{id}")
     public Task updateTask(@AuthenticationPrincipal Jwt jwt, @PathVariable int id,
             @RequestBody TaskRequest request) {
-        return service.updateTask(caller(jwt), id, request);
+        return service.updateTask(jwt.getSubject(), id, request);
     }
 
     @PatchMapping("/tasks/{id}/status")
@@ -62,21 +60,17 @@ public class TaskController {
         if (request.completed() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "completed is required");
         }
-        return service.setStatus(caller(jwt), id, request.completed());
+        return service.setStatus(jwt.getSubject(), id, request.completed());
     }
 
     @DeleteMapping("/tasks/{id}")
     public ResponseEntity<Void> deleteTask(@AuthenticationPrincipal Jwt jwt, @PathVariable int id) {
-        service.deleteTask(caller(jwt), id);
+        service.deleteTask(jwt.getSubject(), id);
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/tasks/completed")
     public Map<String, Long> clearCompleted(@AuthenticationPrincipal Jwt jwt) {
-        return Map.of("deleted", service.clearCompleted(caller(jwt)));
-    }
-
-    private static Caller caller(Jwt jwt) {
-        return new Caller(jwt.getSubject(), "admin".equals(jwt.getClaimAsString("role")));
+        return Map.of("deleted", service.clearCompleted(jwt.getSubject()));
     }
 }

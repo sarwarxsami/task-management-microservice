@@ -27,4 +27,17 @@ public class TaskClient {
                 .body(new ParameterizedTypeReference<List<TaskInfo>>() {
                 });
     }
+
+    // Newest Open tasks of everyone except one user, cut to limit by task-service
+    public List<TaskInfo> openTasks(String excludeStudentId, int limit) {
+        return client.get()
+                .uri(b -> b.path("/internal/tasks")
+                        .queryParam("visibilities", "open")
+                        .queryParam("excludeStudentId", excludeStudentId)
+                        .queryParam("limit", limit)
+                        .build())
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<TaskInfo>>() {
+                });
+    }
 }

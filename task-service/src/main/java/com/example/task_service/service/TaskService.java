@@ -4,6 +4,9 @@ import java.util.List;
 import java.util.Set;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -15,11 +18,10 @@ import com.example.task_service.repository.TaskRepository;
 @Service
 public class TaskService {
 
-    public record Caller(String studentId, boolean admin) {
-    }
-
     private static final Set<String> PRIORITIES = Set.of("low", "medium", "high");
     public static final Set<String> VISIBILITIES = Set.of("only_me", "trusted", "open");
+    public static final int MAX_SHARING_LIMIT = 500;
+    private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
     private static final int MAX_TITLE = 200;
     private static final int MAX_DESCRIPTION = 2000;
 
@@ -29,29 +31,11 @@ public class TaskService {
         this.repository = repository;
     }
 
-    // Users only see their own tasks; admins see everyone's, optionally filtered by studentId
-    public List<Task> getTasks(Caller caller, String studentId) {
-        if (!caller.admin()) {
-            if (studentId != null && !studentId.equals(caller.studentId())) {
-                throw new ApiException(HttpStatus.FORBIDDEN, "Not allowed");
-            }
-            return repository.findByStudentIdOrderByCreatedAtDescIdDesc(caller.studentId());
-        }
-        if (studentId == null || studentId.isBlank()) {
-            return repository.findAllByOrderByCreatedAtDescIdDesc();
-        }
-        return repository.findByStudentIdOrderByCreatedAtDescIdDesc(studentId);
+    public List<Task> getTasks(String owner) {
+        return repository.findByStudentIdOrderByCreatedAtDescIdDesc(owner);
     }
 
-    public Task addTask(Caller caller, TaskRequest request) {
-        String owner = caller.studentId();
-        if (request.studentId() != null && !request.studentId().equals(owner)) {
-            if (!caller.admin()) {
-                throw new ApiException(HttpStatus.FORBIDDEN, "Not allowed");
-            }
-            owner = request.studentId();
-        }
-
+    public Task addTask(String owner, TaskRequest request) {
         Task task = new Task();
         task.setStudentId(owner);
         apply(task, request);
@@ -64,41 +48,49 @@ public class TaskService {
         }
     }
 
-    public Task updateTask(Caller caller, int id, TaskRequest request) {
-        Task task = findOwned(caller, id);
+    public Task updateTask(String owner, int id, TaskRequest request) {
+        Task task = findOwned(owner, id);
         apply(task, request);
         return repository.save(task);
     }
 
-    public Task setStatus(Caller caller, int id, boolean completed) {
-        Task task = findOwned(caller, id);
+    public Task setStatus(String owner, int id, boolean completed) {
+        Task task = findOwned(owner, id);
         task.setCompleted(completed);
         return repository.save(task);
     }
 
-    public void deleteTask(Caller caller, int id) {
-        repository.delete(findOwned(caller, id));
+    public void deleteTask(String owner, int id) {
+        repository.delete(findOwned(owner, id));
     }
 
-    // Used by social-service, which decides who may see what
-    public List<Task> findForSharing(List<String> studentIds, List<String> visibilities) {
+    // Used by social-service, which decides who may see what. Newest first; limit (1-500) is applied in the database.
+    public List<Task> findForSharing(List<String> studentIds, List<String> visibilities, String excludedStudentId, Integer limit) {
         if (visibilities.isEmpty() || !VISIBILITIES.containsAll(visibilities)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid visibilities");
         }
-        if (studentIds.isEmpty()) {
-            return repository.findByVisibilityInOrderByCreatedAtDescIdDesc(visibilities);
+        if (limit != null && (limit < 1 || limit > MAX_SHARING_LIMIT)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "limit must be 1-" + MAX_SHARING_LIMIT);
         }
-        return repository.findByStudentIdInAndVisibilityInOrderByCreatedAtDescIdDesc(studentIds, visibilities);
+        Pageable page = limit == null ? Pageable.unpaged(NEWEST_FIRST) : PageRequest.of(0, limit, NEWEST_FIRST);
+
+        if (!studentIds.isEmpty()) {
+            return repository.findByStudentIdInAndVisibilityIn(studentIds, visibilities, page);
+        }
+        if (excludedStudentId != null && !excludedStudentId.isBlank()) {
+            return repository.findByVisibilityInAndStudentIdNot(visibilities, excludedStudentId, page);
+        }
+        return repository.findByVisibilityIn(visibilities, page);
     }
 
-    public long clearCompleted(Caller caller) {
-        return repository.deleteByStudentIdAndCompletedTrue(caller.studentId());
+    public long clearCompleted(String owner) {
+        return repository.deleteByStudentIdAndCompletedTrue(owner);
     }
 
     // Not-owned tasks look the same as missing ones so ids are not leaked
-    private Task findOwned(Caller caller, int id) {
+    private Task findOwned(String owner, int id) {
         return repository.findById(id)
-                .filter(t -> caller.admin() || t.getStudentId().equals(caller.studentId()))
+                .filter(t -> t.getStudentId().equals(owner))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Task not found"));
     }
 

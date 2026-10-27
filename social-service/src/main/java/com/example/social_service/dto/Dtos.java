@@ -11,8 +11,8 @@ public final class Dtos {
     private Dtos() {
     }
 
-    // Public identity of a user; studentId is only filled in for admins
-    public record Person(String username, String name, String studentId, boolean listed) {
+    // Public identity of a user; student IDs are never shared
+    public record Person(String username, String name, boolean listed) {
     }
 
     // A task as seen by someone else: no owner identity inside

@@ -122,6 +122,6 @@ public class SocialController {
     }
 
     private static Caller caller(Jwt jwt) {
-        return new Caller(jwt.getSubject(), "admin".equals(jwt.getClaimAsString("role")));
+        return new Caller(jwt.getSubject());
     }
 }

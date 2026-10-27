@@ -73,18 +73,26 @@ test("authorization on user routes", async () => {
 
     assert.equal((await request(app).get(`${BASE}/users`)).status, 401);
     assert.equal((await request(app).get(`${BASE}/users`).set("Authorization", `Bearer ${alice}`)).status, 403);
+
+    // admins see only id, name and username
     const list = await request(app).get(`${BASE}/users`).set("Authorization", `Bearer ${admin.token}`);
     assert.equal(list.status, 200);
-    assert.ok(list.body.some(u => u.studentId === "t-bob"));
-    assert.ok(list.body.every(u => !("password_hash" in u)));
+    const bobRow = list.body.find(u => u.username === "t_bob");
+    assert.deepEqual(Object.keys(bobRow).sort(), ["id", "name", "username"]);
+    assert.ok(list.body.every(u => Object.keys(u).length === 3));
 
     // a user cannot edit someone else
     const edit = await request(app).put(`${BASE}/users/t-bob`).set("Authorization", `Bearer ${alice}`).send({ name: "Hacked" });
     assert.equal(edit.status, 403);
 
-    // a user cannot promote themselves
+    // nobody can change roles, not even their own
     const promote = await request(app).put(`${BASE}/users/t-alice`).set("Authorization", `Bearer ${alice}`).send({ role: "admin" });
     assert.equal(promote.status, 403);
+
+    // admins cannot rename, change or delete other users through the owner routes
+    assert.equal((await request(app).put(`${BASE}/users/t-bob`).set("Authorization", `Bearer ${admin.token}`).send({ name: "Robert" })).status, 403);
+    assert.equal((await request(app).put(`${BASE}/users/t-bob`).set("Authorization", `Bearer ${admin.token}`).send({ role: "admin" })).status, 403);
+    assert.equal((await request(app).delete(`${BASE}/users/t-bob`).set("Authorization", `Bearer ${admin.token}`)).status, 403);
 
     // owner renames and changes password
     const rename = await request(app).put(`${BASE}/users/t-alice`).set("Authorization", `Bearer ${alice}`)
@@ -94,16 +102,38 @@ test("authorization on user routes", async () => {
     const relogin = await request(app).post(`${BASE}/auth/login`).send({ studentId: "t-alice", password: "newpassword1" });
     assert.equal(relogin.status, 200);
 
-    // admin renames and promotes another user
-    const adminEdit = await request(app).put(`${BASE}/users/t-bob`).set("Authorization", `Bearer ${admin.token}`).send({ name: "Robert", role: "admin" });
-    assert.equal(adminEdit.status, 200);
-    assert.equal(adminEdit.body.role, "admin");
-
-    // owner deletes own account, admin deletes another
+    // owner deletes own account
     assert.equal((await request(app).delete(`${BASE}/users/t-alice`).set("Authorization", `Bearer ${bob}`)).status, 403);
     assert.equal((await request(app).delete(`${BASE}/users/t-alice`).set("Authorization", `Bearer ${alice}`)).status, 204);
-    assert.equal((await request(app).delete(`${BASE}/users/t-bob`).set("Authorization", `Bearer ${admin.token}`)).status, 204);
-    assert.equal((await request(app).delete(`${BASE}/users/t-bob`).set("Authorization", `Bearer ${admin.token}`)).status, 404);
+
+    // only admins delete by id
+    assert.equal((await request(app).delete(`${BASE}/users/by-id/${bobRow.id}`).set("Authorization", `Bearer ${bob}`)).status, 403);
+    assert.equal((await request(app).delete(`${BASE}/users/by-id/abc`).set("Authorization", `Bearer ${admin.token}`)).status, 400);
+    assert.equal((await request(app).delete(`${BASE}/users/by-id/${bobRow.id}`).set("Authorization", `Bearer ${admin.token}`)).status, 204);
+    assert.equal((await request(app).delete(`${BASE}/users/by-id/${bobRow.id}`).set("Authorization", `Bearer ${admin.token}`)).status, 404);
+});
+
+test("admin rights follow ADMIN_STUDENT_IDS, not the token", async () => {
+    const { ADMIN_STUDENT_IDS } = require('../src/config');
+    const admin = (await request(app).post(`${BASE}/auth/login`).send({ studentId: "t-admin", password: "password123" })).body.token;
+    assert.equal((await request(app).get(`${BASE}/users`).set("Authorization", `Bearer ${admin}`)).status, 200);
+
+    // removed from the list: the same token stops working and the stored role is demoted
+    ADMIN_STUDENT_IDS.splice(ADMIN_STUDENT_IDS.indexOf("t-admin"), 1);
+    try {
+        assert.equal((await request(app).get(`${BASE}/users`).set("Authorization", `Bearer ${admin}`)).status, 403);
+        const me = await request(app).get(`${BASE}/auth/me`).set("Authorization", `Bearer ${admin}`);
+        assert.equal(me.body.role, "user");
+        const row = await pool.query("SELECT role FROM users WHERE student_id = 't-admin'");
+        assert.equal(row.rows[0].role, "user");
+    } finally {
+        ADMIN_STUDENT_IDS.push("t-admin");
+    }
+
+    // a deleted admin's token is rejected
+    await pool.query("DELETE FROM users WHERE student_id = 't-admin'");
+    assert.equal((await request(app).get(`${BASE}/users`).set("Authorization", `Bearer ${admin}`)).status, 401);
+    await register("t-admin", "Admin");
 });
 
 test("rejects tampered tokens", async () => {

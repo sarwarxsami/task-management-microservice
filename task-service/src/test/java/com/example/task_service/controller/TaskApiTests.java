@@ -51,7 +51,7 @@ class TaskApiTests {
     @BeforeEach
     void setUp() {
         cleanUp();
-        jdbc.update("INSERT INTO users (name, student_id) VALUES ('Alice', 'j-alice'), ('Bob', 'j-bob')");
+        jdbc.update("INSERT INTO users (name, student_id) VALUES ('Alice', 'j-alice'), ('Bob', 'j-bob'), ('Admin', 'j-admin')");
     }
 
     @AfterEach
@@ -144,16 +144,19 @@ class TaskApiTests {
 
         mvc.perform(get(BASE + "/tasks").header("Authorization", bob))
                 .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(0)));
+        // asking for someone else's tasks is ignored: you only ever get your own
         mvc.perform(get(BASE + "/tasks?studentId=j-alice").header("Authorization", bob))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(0)));
         mvc.perform(put(BASE + "/tasks/" + id).header("Authorization", bob)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"hacked\"}"))
                 .andExpect(status().isNotFound());
         mvc.perform(delete(BASE + "/tasks/" + id).header("Authorization", bob))
                 .andExpect(status().isNotFound());
+        // a studentId in the body cannot assign the task to someone else
         mvc.perform(post(BASE + "/tasks").header("Authorization", bob)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"x\",\"studentId\":\"j-alice\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.studentId").value("j-bob"));
 
         mvc.perform(get(BASE + "/tasks").header("Authorization", alice))
                 .andExpect(jsonPath("$", hasSize(1)))
@@ -211,22 +214,38 @@ class TaskApiTests {
     }
 
     @Test
-    void adminSeesAndManagesAllTasks() throws Exception {
+    void adminsHaveNoPowerOverOtherUsersTasks() throws Exception {
         String alice = token("j-alice", "user");
         String admin = token("j-admin", "admin");
         int id = createTask(alice, "{\"title\":\"Alice task\"}");
-        createTask(admin, "{\"title\":\"For Bob\",\"studentId\":\"j-bob\"}");
 
-        mvc.perform(get(BASE + "/tasks?studentId=j-bob").header("Authorization", admin))
-                .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].studentId").value("j-bob"));
+        mvc.perform(get(BASE + "/tasks").header("Authorization", admin))
+                .andExpect(jsonPath("$", hasSize(0)));
+        mvc.perform(get(BASE + "/tasks?studentId=j-alice").header("Authorization", admin))
+                .andExpect(jsonPath("$", hasSize(0)));
         mvc.perform(put(BASE + "/tasks/" + id).header("Authorization", admin)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"Edited by admin\"}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isNotFound());
+        mvc.perform(patch(BASE + "/tasks/" + id + "/status").header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"completed\":true}"))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete(BASE + "/tasks/" + id).header("Authorization", admin))
+                .andExpect(status().isNotFound());
         mvc.perform(post(BASE + "/tasks").header("Authorization", admin)
-                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"x\",\"studentId\":\"nobody\"}"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error").value("User not found"));
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"For Bob\",\"studentId\":\"j-bob\"}"))
+                .andExpect(jsonPath("$.studentId").value("j-admin"));
+    }
+
+    @Test
+    void tokensOfDeletedAccountsAreRejected() throws Exception {
+        String alice = token("j-alice", "user");
+        mvc.perform(get(BASE + "/tasks").header("Authorization", alice)).andExpect(status().isOk());
+        jdbc.update("DELETE FROM users WHERE student_id = 'j-alice'");
+        mvc.perform(get(BASE + "/tasks").header("Authorization", alice))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post(BASE + "/tasks").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"ghost\"}"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -277,6 +296,27 @@ class TaskApiTests {
         mvc.perform(get("/internal/tasks?studentIds=j-alice,j-bob&visibilities=open").header("X-Internal-Key", INTERNAL_KEY))
                 .andExpect(jsonPath("$", hasSize(2)));
         mvc.perform(get("/internal/tasks?visibilities=only_me,bogus").header("X-Internal-Key", INTERNAL_KEY))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void internalOpenFeedIsLimitedAndExcludesTheCaller() throws Exception {
+        String alice = token("j-alice", "user");
+        String bob = token("j-bob", "user");
+        createTask(alice, "{\"title\":\"alice open\",\"visibility\":\"open\"}");
+        createTask(bob, "{\"title\":\"bob open 1\",\"visibility\":\"open\"}");
+        createTask(bob, "{\"title\":\"bob open 2\",\"visibility\":\"open\"}");
+
+        mvc.perform(get("/internal/tasks?visibilities=open&excludeStudentId=j-alice&limit=500").header("X-Internal-Key", INTERNAL_KEY))
+                .andExpect(jsonPath("$[?(@.studentId == 'j-alice')]", hasSize(0)))
+                .andExpect(jsonPath("$[?(@.studentId == 'j-bob')]", hasSize(2)));
+        // newest first, cut in the database
+        mvc.perform(get("/internal/tasks?visibilities=open&excludeStudentId=j-alice&limit=1").header("X-Internal-Key", INTERNAL_KEY))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title").value("bob open 2"));
+        mvc.perform(get("/internal/tasks?visibilities=open&limit=0").header("X-Internal-Key", INTERNAL_KEY))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/internal/tasks?visibilities=open&limit=501").header("X-Internal-Key", INTERNAL_KEY))
                 .andExpect(status().isBadRequest());
     }
 }

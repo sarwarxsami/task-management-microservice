@@ -33,15 +33,16 @@ import com.example.social_service.repository.SocialRepository.Link;
 
 /*
  * Visibility rules
- *   only_me  - owner and admins
+ *   only_me  - the owner only
  *   trusted  - also users on the owner's Your Task Viewers list
  *   open     - every logged-in user; an Unlisted owner is shown as "User is Unlisted"
- * Unlisted users are hidden from Discover, their Space is admin-only, and they cannot receive requests.
+ * Unlisted users are hidden from Discover, their Space opens only for themselves, and they cannot receive requests.
+ * Admins get no extra access here: they are treated like every other user.
  */
 @Service
 public class SocialService {
 
-    public record Caller(String studentId, boolean admin) {
+    public record Caller(String studentId) {
     }
 
     private static final List<String> ALL = List.of("only_me", "trusted", "open");
@@ -80,21 +81,18 @@ public class SocialService {
         return users.byIds(listed).values().stream()
                 .filter(u -> u.username() != null)
                 .sorted((a, b) -> a.username().compareTo(b.username()))
-                .map(u -> new DiscoverEntry(person(caller, u, true), rel.with(u.studentId())))
+                .map(u -> new DiscoverEntry(person(u, true), rel.with(u.studentId())))
                 .toList();
     }
 
     public List<OpenTask> openTasks(Caller caller) {
-        List<TaskInfo> open = tasks.tasks(List.of(), OPEN).stream()
-                .filter(t -> !t.studentId().equals(caller.studentId()))
-                .limit(OPEN_FEED_LIMIT)
-                .toList();
+        List<TaskInfo> open = tasks.openTasks(caller.studentId(), OPEN_FEED_LIMIT);
         Map<String, UserInfo> owners = users.byIds(open.stream().map(TaskInfo::studentId).collect(Collectors.toSet()));
         Set<String> listed = repo.listedIds();
 
         return open.stream()
                 .map(t -> new OpenTask(SharedTask.of(t),
-                        visiblePerson(caller, owners.get(t.studentId()), listed.contains(t.studentId()))))
+                        visiblePerson(owners.get(t.studentId()), listed.contains(t.studentId()))))
                 .toList();
     }
 
@@ -105,18 +103,17 @@ public class SocialService {
         boolean self = target.studentId().equals(caller.studentId());
         boolean listed = repo.isListed(target.studentId());
 
-        if (!listed && !self && !caller.admin()) {
+        if (!listed && !self) {
             throw new ApiException(HttpStatus.NOT_FOUND, "User is Unlisted");
         }
 
         Relationship relationship = relations(caller).with(target.studentId());
-        List<String> visibilities = self || caller.admin() ? ALL
-                : relationship.addedMe() ? TRUSTED_AND_OPEN : OPEN;
+        List<String> visibilities = self ? ALL : relationship.addedMe() ? TRUSTED_AND_OPEN : OPEN;
         List<SharedTask> shared = tasks.tasks(List.of(target.studentId()), visibilities).stream()
                 .map(SharedTask::of)
                 .toList();
 
-        return new Space(person(caller, target, listed), self, relationship, shared);
+        return new Space(person(target, listed), self, relationship, shared);
     }
 
     // ---- Your Task Viewers ----
@@ -129,7 +126,7 @@ public class SocialService {
         // the owner chose these people, so their identity is always shown to the owner
         return links.stream()
                 .filter(l -> info.containsKey(l.studentId()))
-                .map(l -> new Viewer(person(caller, info.get(l.studentId()), listed.contains(l.studentId())), l.createdAt()))
+                .map(l -> new Viewer(person(info.get(l.studentId()), listed.contains(l.studentId())), l.createdAt()))
                 .toList();
     }
 
@@ -137,7 +134,7 @@ public class SocialService {
     public void addViewer(Caller caller, String username) {
         UserInfo target = requireUser(username);
         requireNotSelf(caller, target);
-        if (!caller.admin() && !repo.isListed(target.studentId())) {
+        if (!repo.isListed(target.studentId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "User is Unlisted");
         }
         repo.addViewer(caller.studentId(), target.studentId());
@@ -170,7 +167,7 @@ public class SocialService {
         return links.stream()
                 .filter(l -> info.containsKey(l.studentId()))
                 .map(l -> new ViewTasksEntry(
-                        visiblePerson(caller, info.get(l.studentId()), listed.contains(l.studentId())),
+                        visiblePerson(info.get(l.studentId()), listed.contains(l.studentId())),
                         l.createdAt(),
                         byOwner.getOrDefault(l.studentId(), List.of())))
                 .toList();
@@ -189,11 +186,11 @@ public class SocialService {
         // requesters reveal themselves by asking, so their identity is shown to the owner
         List<RequestEntry> in = incoming.stream()
                 .filter(r -> info.containsKey(r.requesterId()))
-                .map(r -> new RequestEntry(r.id(), person(caller, info.get(r.requesterId()), listed.contains(r.requesterId())), r.createdAt()))
+                .map(r -> new RequestEntry(r.id(), person(info.get(r.requesterId()), listed.contains(r.requesterId())), r.createdAt()))
                 .toList();
         List<RequestEntry> out = outgoing.stream()
                 .filter(r -> info.containsKey(r.ownerId()))
-                .map(r -> new RequestEntry(r.id(), visiblePerson(caller, info.get(r.ownerId()), listed.contains(r.ownerId())), r.createdAt()))
+                .map(r -> new RequestEntry(r.id(), visiblePerson(info.get(r.ownerId()), listed.contains(r.ownerId())), r.createdAt()))
                 .toList();
         return new Requests(in, out);
     }
@@ -251,16 +248,16 @@ public class SocialService {
         }
     }
 
-    private static Person person(Caller caller, UserInfo u, boolean listed) {
-        return new Person(u.username(), u.name(), caller.admin() ? u.studentId() : null, listed);
+    private static Person person(UserInfo u, boolean listed) {
+        return new Person(u.username(), u.name(), listed);
     }
 
-    // null renders as "User is Unlisted"; admins always see who it is
-    private static Person visiblePerson(Caller caller, UserInfo u, boolean listed) {
-        if (u == null || (!listed && !caller.admin())) {
+    // null renders as "User is Unlisted"
+    private static Person visiblePerson(UserInfo u, boolean listed) {
+        if (u == null || !listed) {
             return null;
         }
-        return person(caller, u, listed);
+        return person(u, listed);
     }
 
     private static Set<String> ids(Collection<Link> links) {

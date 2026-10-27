@@ -32,15 +32,17 @@ public class InternalTaskController {
         this.internalKey = internalKey.getBytes(StandardCharsets.UTF_8);
     }
 
-    // GET /internal/tasks?visibilities=trusted,open[&studentIds=a,b]
+    // GET /internal/tasks?visibilities=trusted,open[&studentIds=a,b][&excludeStudentId=c][&limit=100]
     @GetMapping("/tasks")
     public List<Task> tasks(@RequestHeader(name = "X-Internal-Key", required = false) String key,
             @RequestParam(defaultValue = "") String studentIds,
-            @RequestParam String visibilities) {
+            @RequestParam String visibilities,
+            @RequestParam(required = false) String excludeStudentId,
+            @RequestParam(required = false) Integer limit) {
         if (key == null || !MessageDigest.isEqual(internalKey, key.getBytes(StandardCharsets.UTF_8))) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid internal key");
         }
-        return service.findForSharing(split(studentIds), split(visibilities));
+        return service.findForSharing(split(studentIds), split(visibilities), excludeStudentId, limit);
     }
 
     private static List<String> split(String value) {

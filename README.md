@@ -28,10 +28,9 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 ## Features
 
 - **Accounts** — register / log in with student ID and password (bcrypt-hashed), JWT sessions, change name and password, delete own account.
-- **Roles** — `user` manages only their own tasks; `admin` sees and edits everyone's tasks and manages users (rename, promote/demote, delete). Admins are bootstrapped with `ADMIN_STUDENT_IDS`.
+- **Roles** — everyone, admins included, manages only their own tasks. An `admin` additionally sees every account's name and username and can delete accounts; nothing else (no student IDs, no other users' tasks, no renaming or role changes). Admins are exactly the student IDs in `ADMIN_STUDENT_IDS`, checked on every request.
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
 - **Organising** — summary counts (total, active, completed, due today, overdue), status filter (all / active / completed / overdue), search, sort by newest, deadline, priority or title, overdue and due-soon highlighting.
-- **Per-user view** — admins can switch between their own tasks, all tasks, or any single user's tasks, and assign new tasks to a user.
 - **Usernames** — every user has a unique public username, separate from their name and student ID.
 - **Task visibility** — each task is **Only Me** (default), **Trusted** or **Open**.
 - **Your Task Viewers / View Tasks** — choose who can see your Trusted tasks (one-way), and see the tasks of people who added you.
@@ -45,7 +44,9 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 All endpoints except `health`, `register` and `login` require `Authorization: Bearer <token>`.
 
 ### user-service — Node.js
-Owns users, usernames and authentication; issues HS256 JWTs (`sub` = student ID, `name`, `role`, 8h expiry). Login/register are rate-limited per client IP (20 failed attempts per 15 minutes).
+Owns users, usernames and authentication; issues HS256 JWTs (`sub` = student ID, `name`, 8h expiry). Login/register are rate-limited per client IP (20 failed attempts per 15 minutes).
+
+The token carries no role. Admin rights are read from `ADMIN_STUDENT_IDS` on every request (the stored `role` column is synced to it on login and `/auth/me`, demoting as well as promoting), so removing an ID takes effect without waiting for tokens to expire. All three services reject tokens of deleted accounts.
 
 | Method | Endpoint | Access | Description |
 |---|---|---|---|
@@ -53,9 +54,10 @@ Owns users, usernames and authentication; issues HS256 JWTs (`sub` = student ID,
 | POST | `/service/user-service/auth/register` | public | Create an account → `{ token, user }` |
 | POST | `/service/user-service/auth/login` | public | Log in → `{ token, user }` |
 | GET | `/service/user-service/auth/me` | any user | Current user |
-| GET | `/service/user-service/users` | admin | List users |
-| PUT | `/service/user-service/users/:studentId` | owner or admin | Owner: `name`, `username`, `currentPassword` + `newPassword`. Admin: `name`, `username`, `role` |
-| DELETE | `/service/user-service/users/:studentId` | owner or admin | Delete user and (via cascade) their tasks |
+| GET | `/service/user-service/users` | admin | List users → `[{ id, name, username }]` only |
+| DELETE | `/service/user-service/users/by-id/:id` | admin | Delete a user (by the `id` from the list) and, via cascade, their tasks |
+| PUT | `/service/user-service/users/:studentId` | owner | `name`, `username`, `currentPassword` + `newPassword`. Roles cannot be changed |
+| DELETE | `/service/user-service/users/:studentId` | owner | Delete own account and (via cascade) own tasks |
 
 **POST** `/service/user-service/auth/register`
 ```json
@@ -72,16 +74,16 @@ Users created before accounts existed have no password; registering with their s
 ---
 
 ### task-service — Spring Boot (Java)
-Owns tasks; validates the JWT with Spring Security (OAuth2 resource server, shared `JWT_SECRET`). Tasks owned by someone else return `404` for non-admins.
+Owns tasks; validates the JWT with Spring Security (OAuth2 resource server, shared `JWT_SECRET`). Every user, admins included, only ever sees and changes their own tasks; tasks owned by someone else return `404`.
 
 | Method | Endpoint | Access | Description |
 |---|---|---|---|
 | GET | `/service/task-service/health` | public | Health check |
-| GET | `/service/task-service/tasks?studentId=` | user: own / admin: any or all | List tasks |
-| POST | `/service/task-service/tasks` | any user | Create a task (admins may set `studentId`) |
-| PUT | `/service/task-service/tasks/:id` | owner or admin | Update title, description, deadline, priority, visibility |
-| PATCH | `/service/task-service/tasks/:id/status` | owner or admin | `{ "completed": true }` |
-| DELETE | `/service/task-service/tasks/:id` | owner or admin | Delete a task |
+| GET | `/service/task-service/tasks` | any user | List own tasks |
+| POST | `/service/task-service/tasks` | any user | Create a task (always owned by the caller) |
+| PUT | `/service/task-service/tasks/:id` | owner | Update title, description, deadline, priority, visibility |
+| PATCH | `/service/task-service/tasks/:id/status` | owner | `{ "completed": true }` |
+| DELETE | `/service/task-service/tasks/:id` | owner | Delete a task |
 | DELETE | `/service/task-service/tasks/completed` | any user | Delete own completed tasks |
 
 **POST** `/service/task-service/tasks`
@@ -121,14 +123,14 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 
 | Task visibility | Who can see it |
 |---|---|
-| Only Me (default) | the owner and admins |
+| Only Me (default) | the owner only |
 | Trusted | also everyone on the owner's **Your Task Viewers** list |
 | Open | every logged-in user |
 
 - **Listed** users appear in **Discover**; anyone can open their **Space** (username, name and the tasks they may see, read-only).
-- **Unlisted** users (the default) are hidden from Discover, their Space opens only for admins, and they cannot receive requests. Their Open tasks still appear in the Open Tasks feed, and they appear in **View Tasks**, as **"User is Unlisted"**.
+- **Unlisted** users (the default) are hidden from Discover, their Space opens only for themselves, and they cannot receive requests. Their Open tasks still appear in the Open Tasks feed, and they appear in **View Tasks**, as **"User is Unlisted"**.
 - Adding someone to Your Task Viewers is one-way. A **Viewer Access Request** asks someone to add you to theirs.
-- Other users see usernames, never student IDs; admins see everything.
+- Other users see usernames, never student IDs. Admins get no extra access here and are treated like everyone else.
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -153,7 +155,7 @@ Not routed by Nginx (it only proxies `/service/<name>/...`) and protected by the
 | Service | Endpoint | Used by |
 |---|---|---|
 | user-service | `GET /internal/users?ids=...&usernames=...` | social-service (names, usernames) |
-| task-service | `GET /internal/tasks?studentIds=...&visibilities=...` | social-service (Trusted / Open tasks) |
+| task-service | `GET /internal/tasks?studentIds=...&visibilities=...[&excludeStudentId=...&limit=...]` | social-service (Trusted / Open tasks; the Open Tasks feed is cut to 100 in the database) |
 
 ---
 
@@ -178,25 +180,25 @@ Not routed by Nginx (it only proxies `/service/<name>/...`) and protected by the
 
 ## What Was Built and Done
 
-- **Dockerized both services** — each service has a multi-stage Dockerfile: a builder stage compiles/installs, a runtime stage runs only the output as a non-root user.
+- **Dockerized all three services** — each service has a multi-stage Dockerfile: a builder stage compiles/installs, a runtime stage runs only the output as a non-root user.
 - **Multi-stage Docker builds** — builder stage uses full JDK/Node for compiling, runtime stage uses slim JRE/Node so production images carry no build tools or source code.
-- **Single PostgreSQL instance** — one database container shared across both services via Docker internal networking.
+- **Single PostgreSQL instance** — one database container shared by all three services via Docker internal networking.
 - **Docker Compose orchestration** — all five containers (user-service, task-service, social-service, postgres, nginx) defined and managed in one `docker-compose.yml` with networks, volumes, pinned image versions, `restart: unless-stopped`, and healthchecks: services wait for a healthy Postgres, and deploys wait (`docker compose up --wait`) until every service reports healthy.
 - **Custom Docker networks** — `user-net` connects user-service and postgres; `task-net` connects task-service and postgres; social-service and Nginx sit on both networks to reach the services they call.
 - **Service-to-service API** — social-service calls internal endpoints of user-service and task-service over the Docker network, authenticated with a shared `INTERNAL_API_KEY`; Nginx never routes `/internal/*`.
 - **Named volumes** — postgres data persisted in a named Docker volume so data survives container restarts.
-- **Environment variables via env\_file** — credentials are not hard-coded; Postgres and both services read from a `.env` file on the VM that is git-ignored and never baked into an image. `.env.example` lists the required keys (`DB_*`, `JWT_SECRET`, `INTERNAL_API_KEY`, `ADMIN_STUDENT_IDS`).
+- **Environment variables via env\_file** — credentials are not hard-coded; Postgres and all three services read from a `.env` file on the VM that is git-ignored and never baked into an image. `.env.example` lists the required keys (`DB_*`, `JWT_SECRET`, `INTERNAL_API_KEY`, `ADMIN_STUDENT_IDS`).
 - **GitHub Actions CI/CD pipeline** — on every push to `main`, the workflow validates the compose and Nginx configs, runs all three services' integration tests against a Postgres service container, builds all three images and pushes them to Docker Hub tagged `latest` and the commit SHA, copies the compose file, Nginx config, SQL and frontend to the VM via SCP, runs `docker compose pull && docker compose up -d` with that SHA (no `down`, so no full outage), and finishes with a smoke test against the live HTTPS endpoints (health checks plus a check that protected endpoints reject anonymous requests).
 - **Docker Hub image registry** — built images stored at `sarwarxsami/task-service`, `sarwarxsami/user-service` and `sarwarxsami/social-service`. Every commit has its own tag, so rolling back is `IMAGE_TAG=<old-sha> docker compose up -d`.
 - **SSH key-pair authentication** — dedicated ED25519 key pair generated for GitHub Actions; public key on the VM, private key stored as a GitHub Secret.
 - **GitHub Secrets** — Docker Hub credentials, VM IP, SSH username, and private key stored as encrypted secrets, never exposed in workflow logs.
-- **Nginx reverse proxy** — single Nginx container routes all traffic: `/service/user-service/*` → user-service, `/service/task-service/*` → task-service, `/service/social-service/*` → social-service, `/` → static frontend. App services have no public ports.
-- **HTTPS with Let's Encrypt** — Certbot issued a free SSL certificate for `task.sarwarxsami.me`; Nginx handles SSL termination; HTTP automatically redirects to HTTPS. Nginx serves `/.well-known/acme-challenge/` from `/var/www/certbot` so renewals work while it holds port 80 (see *Certificate renewal* below).
+- **Nginx reverse proxy** — single Nginx container routes all traffic: `/service/user-service/*` → user-service, `/service/task-service/*` → task-service, `/service/social-service/*` → social-service (each prefix ends in `/`, so look-alike paths such as `/service/task-serviceX` are not proxied), `/` → static frontend. App services have no public ports.
+- **HTTPS with Let's Encrypt** — Certbot issued a free SSL certificate for `task.sarwarxsami.me`; Nginx handles SSL termination; HTTP automatically redirects to HTTPS and an HSTS header (`max-age` one year) tells browsers to stay on HTTPS. Nginx serves `/.well-known/acme-challenge/` from `/var/www/certbot` so renewals work while it holds port 80 (see *Certificate renewal* below).
 - **Custom domain** — `sarwarxsami.me` registered free via GitHub Student Developer Pack on Namecheap; `task.sarwarxsami.me` subdomain pointed to EC2 via A record.
-- **Memory budget** — both JVMs run with a fixed small footprint (`JAVA_TOOL_OPTIONS`: 192 MB heap, Serial GC, capped metaspace and code cache), database pools are limited to 5 connections, and every container has a `mem_limit`, so one service cannot starve the others. The VM has a 1 GB swap file (`vm.swappiness=10`) as a safety net.
+- **Memory budget** — both JVMs run with a fixed small footprint (`JAVA_TOOL_OPTIONS`: 192 MB heap, Serial GC, capped metaspace and code cache), every service's database pool is limited to 5 connections (Hikari in the Spring services, `pg.Pool` `max` in user-service), and every container has a `mem_limit`, so one service cannot starve the others. The VM has a 1 GB swap file (`vm.swappiness=10`) as a safety net.
 - **Elastic IP** — the instance keeps the same public IP (`13.202.221.95`) across stops and resizes, so DNS and the `VM_HOST` secret do not need to change.
 - **EC2 Security Group firewall** — only ports 22 (SSH), 80 (HTTP), and 443 (HTTPS) open publicly; all app ports (3000, 8080, 5432) closed to the internet.
-- **Static frontend** — plain HTML, CSS, and JS served directly by Nginx; communicates with both backend services via same-origin `fetch` calls. User data is rendered with `textContent` (never `innerHTML`) and a Content-Security-Policy header is set.
+- **Static frontend** — plain HTML, CSS, and JS served directly by Nginx; communicates with all three backend services via same-origin `fetch` calls. User data is rendered with `textContent` (never `innerHTML`) and a Content-Security-Policy header is set.
 - **Database initialization and migrations** — `db/init.sql` is idempotent (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`). It runs automatically on first startup, and every deploy backs up the database (`~/backups`, last 10 kept) and re-applies it before starting new containers. The schema is owned by this file; Hibernate is set to `ddl-auto=none`.
 - **Shell automation** — a local `connect.sh` script (kept outside this repo) resolves EC2 DNS to the current public IP, updates the `VM_HOST` GitHub Secret via GitHub CLI, and SSHes into the VM in one command; originally written for the dynamic IP of a non-Elastic instance; still handy for connecting and keeping the secret in sync.
 

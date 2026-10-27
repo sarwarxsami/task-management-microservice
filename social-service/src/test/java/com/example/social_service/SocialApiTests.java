@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -106,6 +107,10 @@ class SocialApiTests {
                     .filter(t -> visibilities.contains(t.visibility()))
                     .toList();
         });
+        when(taskClient.openTasks(anyString(), anyInt())).thenAnswer(inv -> TASKS.stream()
+                .filter(t -> t.visibility().equals("open") && !t.studentId().equals(inv.getArgument(0)))
+                .limit((int) inv.getArgument(1))
+                .toList());
     }
 
     @AfterEach
@@ -163,9 +168,11 @@ class SocialApiTests {
         mvc.perform(get(BASE + "/discover").header("Authorization", bob))
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].person.username").value("alice"))
-                .andExpect(jsonPath("$[0].person.studentId").value(nullValue()));
+                .andExpect(jsonPath("$[0].person.studentId").doesNotExist());
+        // admins get no student IDs either
         mvc.perform(get(BASE + "/discover").header("Authorization", token("s-admin", "admin")))
-                .andExpect(jsonPath("$[*].person.studentId", containsInAnyOrder("s-alice", "s-bob")));
+                .andExpect(jsonPath("$[*].person.username", containsInAnyOrder("alice", "bob")))
+                .andExpect(jsonPath("$[*].person.studentId", hasSize(0)));
     }
 
     @Test
@@ -216,7 +223,7 @@ class SocialApiTests {
     }
 
     @Test
-    void unlistedSpaceIsAdminOnly() throws Exception {
+    void unlistedSpaceIsOwnerOnly() throws Exception {
         String bob = token("s-bob", "user");
         mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
                 .andExpect(status().isNotFound())
@@ -226,9 +233,8 @@ class SocialApiTests {
                 .andExpect(jsonPath("$.self").value(true))
                 .andExpect(jsonPath("$.tasks", hasSize(3)));
         mvc.perform(get(BASE + "/spaces/alice").header("Authorization", token("s-admin", "admin")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.person.studentId").value("s-alice"))
-                .andExpect(jsonPath("$.tasks", hasSize(3)));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("User is Unlisted"));
         mvc.perform(get(BASE + "/spaces/nobody").header("Authorization", bob))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("User not found"));
@@ -308,9 +314,35 @@ class SocialApiTests {
                 .andExpect(jsonPath("$[?(@.task.title == 'alice open')].owner.username").value("alice"))
                 .andExpect(jsonPath("$[?(@.task.title == 'carol open')].owner").value(contains(nullValue())));
 
-        // admins see who it is
+        // admins do not see who it is either
         mvc.perform(get(BASE + "/open-tasks").header("Authorization", token("s-admin", "admin")))
-                .andExpect(jsonPath("$[?(@.task.title == 'carol open')].owner.username").value("carol"));
+                .andExpect(jsonPath("$[?(@.task.title == 'carol open')].owner").value(contains(nullValue())));
+    }
+
+    @Test
+    void adminsGetNoExtraAccess() throws Exception {
+        String admin = token("s-admin", "admin");
+        setListed(token("s-alice", "user"), true);
+
+        // listed space: open tasks only, like any stranger
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", admin))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")))
+                .andExpect(jsonPath("$.person.studentId").doesNotExist());
+        // cannot add an unlisted user as a viewer
+        mvc.perform(post(BASE + "/viewers").header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"bob\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("User is Unlisted"));
+    }
+
+    @Test
+    void tokensOfDeletedAccountsAreRejected() throws Exception {
+        String bob = token("s-bob", "user");
+        mvc.perform(get(BASE + "/settings").header("Authorization", bob)).andExpect(status().isOk());
+        jdbc.update("DELETE FROM users WHERE student_id = 's-bob'");
+        mvc.perform(put(BASE + "/settings").header("Authorization", bob)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"listed\":true}"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

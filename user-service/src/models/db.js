@@ -7,6 +7,8 @@ const pool = new Pool({
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     database: process.env.DB_NAME,
+    // same budget as the Spring services (hikari maximum-pool-size=5)
+    max: 5,
 });
 
 module.exports = pool;
