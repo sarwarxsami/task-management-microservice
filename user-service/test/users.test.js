@@ -35,7 +35,7 @@ test("register, login and me", async () => {
     const reg = await register("t-alice", "Alice");
     assert.equal(reg.status, 201);
     assert.ok(reg.body.token);
-    assert.deepEqual(reg.body.user, { name: "Alice", studentId: "t-alice", username: "t_alice", role: "user", tourDone: false });
+    assert.deepEqual(reg.body.user, { name: "Alice", studentId: "t-alice", username: "t_alice", role: "user", toursDone: [] });
 
     const dup = await register("t-alice");
     assert.equal(dup.status, 409);
@@ -136,20 +136,25 @@ test("admin rights follow ADMIN_STUDENT_IDS, not the token", async () => {
     await register("t-admin", "Admin");
 });
 
-test("first-login tour is remembered per account", async () => {
+test("page tours are remembered per account and page", async () => {
     const bob = (await register("t-bob", "Bob")).body;
-    assert.equal(bob.user.tourDone, false);
+    assert.deepEqual(bob.user.toursDone, []);
     const admin = (await request(app).post(`${BASE}/auth/login`).send({ studentId: "t-admin", password: "password123" })).body.token;
+    const mark = (page, token) => request(app).put(`${BASE}/users/t-bob/tours/${page}`).set("Authorization", `Bearer ${token}`);
 
-    // only the owner can mark it
-    assert.equal((await request(app).put(`${BASE}/users/t-bob/tour`).set("Authorization", `Bearer ${admin}`)).status, 403);
-    assert.equal((await request(app).put(`${BASE}/users/t-bob/tour`).set("Authorization", `Bearer ${bob.token}`)).status, 204);
-    assert.equal((await request(app).put(`${BASE}/users/t-bob/tour`).set("Authorization", `Bearer ${bob.token}`)).status, 204);
+    // only the owner, and only known pages
+    assert.equal((await mark("tasks", admin)).status, 403);
+    assert.equal((await mark("nowhere", bob.token)).status, 400);
+
+    assert.deepEqual((await mark("tasks", bob.token)).body.toursDone, ["tasks"]);
+    assert.deepEqual((await mark("discover", bob.token)).body.toursDone, ["tasks", "discover"]);
+    // marking twice changes nothing
+    assert.deepEqual((await mark("tasks", bob.token)).body.toursDone, ["tasks", "discover"]);
 
     const me = await request(app).get(`${BASE}/auth/me`).set("Authorization", `Bearer ${bob.token}`);
-    assert.equal(me.body.tourDone, true);
+    assert.deepEqual(me.body.toursDone, ["tasks", "discover"]);
     const login = await request(app).post(`${BASE}/auth/login`).send({ studentId: "t-bob", password: "password123" });
-    assert.equal(login.body.user.tourDone, true);
+    assert.deepEqual(login.body.user.toursDone, ["tasks", "discover"]);
     await pool.query("DELETE FROM users WHERE student_id = 't-bob'");
 });
 

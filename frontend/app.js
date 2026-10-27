@@ -153,7 +153,6 @@ function saveSession(token, user) {
 
 function logout(message) {
   closeTour();
-  $("help").hidden = true;
   state.token = null;
   state.user = null;
   state.tasks = [];
@@ -179,7 +178,6 @@ async function startSession(restore = false) {
   }
   const last = restore ? store.get("tms.view") : null;
   await openView(["discover", "viewers"].includes(last) || (last === "admin" && isAdmin()) ? last : "tasks");
-  renderHelp();
 }
 
 const LOADERS = {
@@ -233,6 +231,7 @@ function showView(name) {
   }
   if (name === "admin") renderUsers();
   if (name !== "auth" && name !== "space") store.set("tms.view", name);
+  renderHelp();
   window.scrollTo(0, 0);
 }
 
@@ -1278,150 +1277,160 @@ $("form-viewer").addEventListener("submit", (e) => {
   });
 });
 
-// ---------- first-login tour ----------
-// One step per button or section. view: page to show (kept for the following steps); open: dropdowns to open first;
+// ---------- page tours ----------
+// Each page has its own short tour that stays on that page. open: dropdowns to open first;
 // admin: admins only. Steps whose target is missing or hidden are skipped.
 
-const TOUR = [
-  {
-    view: "tasks",
-    title: "Welcome",
-    text: "A short walk through every page and button. Use Next and Back, or skip it. You can replay it anytime from Account.",
-  },
-  { target: '#nav [data-view="tasks"]', title: "Tasks", text: "Your own tasks. Every visit starts here." },
-  { target: '#nav [data-view="discover"]', title: "Discover", text: "Listed people, and everyone's Open tasks." },
-  {
-    target: '#nav [data-view="viewers"]',
-    title: "Viewers",
-    text: "Who may see your Trusted tasks, your groups, Viewer Access Requests, and tasks others share with you. A small number here means requests are waiting. It is the only sign: nothing is ever sent to you anywhere else.",
-  },
-  {
-    target: '#nav [data-view="account"]',
-    title: "Account",
-    text: "Your name, username and password, Listed or Unlisted, this tour, and deleting your account.",
-  },
-  {
-    target: "#nav-admin",
-    admin: true,
-    title: "Users (admins only)",
-    text: "The name and username of every account, with Delete. Admins cannot see anyone's tasks or student IDs.",
-  },
-  { target: "#btn-logout", title: "Log out", text: "Ends your session on this device." },
-  {
-    target: "#view-tasks .stats",
-    title: "Summary",
-    text: "Counts of your tasks: total, active, completed, due today and overdue.",
-  },
-  {
-    target: "#new-task-card",
-    title: "New task",
-    text: "Give it a title. Description, deadline and priority are optional. Add task saves it.",
-  },
-  {
-    target: '#form-task [name="visibility"]',
-    title: "Visibility",
-    text: "Only Me keeps a task to yourself (the default). Trusted shows it to people on Your Task Viewers. Open shows it to everyone.",
-  },
-  {
-    target: "#form-task .audience",
-    trusted: true,
-    title: "All Trusted, Hand-picked, Group",
-    text: "Appears when you choose Trusted. All Trusted: everyone on Your Task Viewers. Hand-picked: only the people you tick. Group: everyone in the groups you tick, Default included.",
-  },
-  {
-    target: "#tasks-card .toolbar",
-    title: "Search and sort",
-    text: "Find a task by its words, and sort by newest, deadline, priority or title.",
-  },
-  {
-    target: "#tasks-card .segmented",
-    title: "Filters",
-    text: "Show all tasks, or only the active, completed or overdue ones.",
-  },
-  {
-    target: "#tasks-card",
-    title: "Your task list",
-    text: "Each task has a box to tick when it is done, Edit and Delete. Trusted tasks also have Who can see, listing exactly who that is right now. Clear completed removes all finished tasks at once.",
-  },
-  {
-    view: "discover",
-    target: "#discover-card",
-    open: ["#discover-card"],
-    title: "Discover",
-    text: "Listed people. Search by name or username, click a name to open their Space, add them to your viewers, or send a Viewer Access Request.",
-  },
-  {
-    target: "#open-card",
-    open: ["#open-card"],
-    title: "Open tasks",
-    text: "Other people's Open tasks, newest first. Owners who are Unlisted show as \"User is Unlisted\".",
-  },
-  {
-    view: "viewers",
-    target: "#requests-card",
-    open: ["#requests-card"],
-    title: "Viewer Access Requests",
-    text: "Received: people asking to see your Trusted tasks; accept or decline. Sent: your own requests; cancel them anytime. A request carries no message.",
-  },
-  {
-    target: "#viewers-card > summary",
-    open: ["#viewers-card"],
-    title: "Your Task Viewers",
-    text: "The people who may see your Trusted tasks. Add them by username; it is one-way. All viewers lists everyone, with Remove.",
-  },
-  {
-    target: "#form-new-group",
-    open: ["#viewers-card"],
-    title: "Groups",
-    text: "Create a group, then open it to Add member, Rename or Delete. A person can be in several groups; whoever is in none is in Default.",
-  },
-  {
-    target: "#viewtasks-card",
-    open: ["#viewtasks-card"],
-    title: "View Tasks",
-    text: "People who added you to their viewers, with the Trusted and Open tasks they let you see. They are never told whether you looked.",
-  },
-  {
-    view: "account",
-    target: "#profile-card",
-    title: "Profile",
-    text: "Change your name and username. Your student ID is only for logging in and is never shown to others.",
-  },
-  {
-    target: "#listed-card",
-    title: "Space visibility",
-    text: "Listed: you appear in Discover and others can open your Space. Unlisted (the default): hidden, and your Space opens only for you.",
-  },
-  { target: "#password-card", title: "Change password", text: "Needs your current password." },
-  { target: "#delete-card", title: "Delete account", text: "Removes your account and all of your tasks for good." },
-  {
-    view: "tasks",
-    target: "#btn-help",
-    title: "Help",
-    text: "Always here in the corner. Take this tour again whenever you like.",
-  },
-  {
-    title: "That's all",
-    text: "Nothing here will call you back. Come when you want to, share what you like, and let it be. Whoever finds it came by themselves.",
-  },
-];
+const PAGE_NAMES = { tasks: "Tasks", discover: "Discover", viewers: "Viewers", account: "Account", admin: "Users" };
 
-// busy: a step is loading its page; clicks and keys wait until it is shown
-const tour = { steps: [], index: 0, opened: new Set(), visibility: null, busy: false };
+const HELP_STEP = {
+  target: "#btn-help",
+  title: "Help",
+  text: "Always here in the corner. Take this page's tour again whenever you like.",
+};
 
-function startTour() {
-  // each step remembers the page of the step before it
-  let view = "tasks";
-  tour.steps = TOUR
-    .filter((step) => !step.admin || isAdmin())
-    .map((step) => {
-      view = step.view || view;
-      return { ...step, view };
-    });
+const TOURS = {
+  tasks: [
+    {
+      title: "Welcome",
+      text: "This is where you keep your own tasks, and where every visit starts. A short look at this page and the menu.",
+    },
+    { target: '#nav [data-view="tasks"]', title: "Tasks", text: "Brings you back here from any page." },
+    {
+      target: '#nav [data-view="discover"]',
+      title: "Discover",
+      text: "Listed people, and everyone's Open tasks. It has its own short tour when you open it.",
+    },
+    {
+      target: '#nav [data-view="viewers"]',
+      title: "Viewers",
+      text: "Who may see your Trusted tasks, your groups, Viewer Access Requests, and tasks others share with you. A small number here means requests are waiting; it is the only sign, nothing is ever sent to you anywhere else. It has its own tour too.",
+    },
+    {
+      target: '#nav [data-view="account"]',
+      title: "Account",
+      text: "Your name, username and password, Listed or Unlisted, and deleting your account.",
+    },
+    {
+      target: "#nav-admin",
+      admin: true,
+      title: "Users (admins only)",
+      text: "The name and username of every account, with Delete. Admins cannot see anyone's tasks or student IDs.",
+    },
+    { target: "#btn-logout", title: "Log out", text: "Ends your session on this device." },
+    {
+      target: "#view-tasks .stats",
+      title: "Summary",
+      text: "Counts of your tasks: total, active, completed, due today and overdue.",
+    },
+    {
+      target: "#new-task-card",
+      title: "New task",
+      text: "Give it a title. Description, deadline and priority are optional. Add task saves it.",
+    },
+    {
+      target: '#form-task [name="visibility"]',
+      title: "Visibility",
+      text: "Only Me keeps a task to yourself (the default). Trusted shows it to people on Your Task Viewers. Open shows it to everyone.",
+    },
+    {
+      target: "#form-task .audience",
+      trusted: true,
+      title: "All Trusted, Hand-picked, Group",
+      text: "Appears when you choose Trusted. All Trusted: everyone on Your Task Viewers. Hand-picked: only the people you tick. Group: everyone in the groups you tick, Default included.",
+    },
+    {
+      target: "#tasks-card .toolbar",
+      title: "Search and sort",
+      text: "Find a task by its words, and sort by newest, deadline, priority or title.",
+    },
+    {
+      target: "#tasks-card .segmented",
+      title: "Filters",
+      text: "Show all tasks, or only the active, completed or overdue ones.",
+    },
+    {
+      target: "#tasks-card",
+      title: "Your task list",
+      text: "Each task has a box to tick when it is done, Edit and Delete. Trusted tasks also have Who can see, listing exactly who that is right now. Clear completed removes all finished tasks at once.",
+    },
+    HELP_STEP,
+  ],
+  discover: [
+    {
+      target: "#discover-card",
+      open: ["#discover-card"],
+      title: "Discover",
+      text: "Listed people. Search by name or username, click a name to open their Space, add them to your viewers, or send a Viewer Access Request.",
+    },
+    {
+      target: "#open-card",
+      open: ["#open-card"],
+      title: "Open tasks",
+      text: "Other people's Open tasks, newest first. Owners who are Unlisted show as \"User is Unlisted\".",
+    },
+    HELP_STEP,
+  ],
+  viewers: [
+    {
+      target: "#requests-card",
+      open: ["#requests-card"],
+      title: "Viewer Access Requests",
+      text: "Received: people asking to see your Trusted tasks; accept or decline. Sent: your own requests; cancel them anytime. A request carries no message.",
+    },
+    {
+      target: "#viewers-card > summary",
+      open: ["#viewers-card"],
+      title: "Your Task Viewers",
+      text: "The people who may see your Trusted tasks. Add them by username; it is one-way. All viewers lists everyone, with Remove.",
+    },
+    {
+      target: "#form-new-group",
+      open: ["#viewers-card"],
+      title: "Groups",
+      text: "Create a group, then open it to Add member, Rename or Delete. A person can be in several groups; whoever is in none is in Default.",
+    },
+    {
+      target: "#viewtasks-card",
+      open: ["#viewtasks-card"],
+      title: "View Tasks",
+      text: "People who added you to their viewers, with the Trusted and Open tasks they let you see. They are never told whether you looked.",
+    },
+    HELP_STEP,
+  ],
+  account: [
+    {
+      target: "#profile-card",
+      title: "Profile",
+      text: "Change your name and username. Your student ID is only for logging in and is never shown to others.",
+    },
+    {
+      target: "#listed-card",
+      title: "Space visibility",
+      text: "Listed: you appear in Discover and others can open your Space. Unlisted (the default): hidden, and your Space opens only for you.",
+    },
+    { target: "#password-card", title: "Change password", text: "Needs your current password." },
+    { target: "#delete-card", title: "Delete account", text: "Removes your account and all of your tasks for good." },
+    HELP_STEP,
+  ],
+  admin: [
+    {
+      target: "#users-card",
+      title: "Users",
+      text: "Every account's name and username, with Delete. Deleting removes the account and all of its tasks. Admins cannot see student IDs or anyone's tasks.",
+    },
+    HELP_STEP,
+  ],
+};
+
+const tour = { page: null, steps: [], index: 0, opened: new Set(), visibility: null };
+
+function startTour(page) {
+  tour.page = page;
+  tour.steps = TOURS[page].filter((step) => !step.admin || isAdmin());
   tour.index = 0;
   tour.opened = new Set();
-  tour.busy = false;
-  $("tour").querySelector(".tour-tip").classList.add("waiting");
+  closeHelpMenu();
   $("tour").hidden = false;
   window.addEventListener("resize", placeTour);
   window.addEventListener("scroll", placeTour, true);
@@ -1430,23 +1439,10 @@ function startTour() {
 }
 
 // direction: 1 forward, -1 back; skips steps whose target cannot be shown
-async function showTourStep(index, direction) {
-  if (tour.busy) return;
-  tour.busy = true;
-  try {
-    await enterTourStep(index, direction);
-  } finally {
-    tour.busy = false;
-  }
-}
-
-async function enterTourStep(index, direction) {
+function showTourStep(index, direction) {
   leaveTourStep();
   while (index >= 0 && index < tour.steps.length) {
     const step = tour.steps[index];
-    if (state.view !== step.view) await openView(step.view);
-    // skipped or logged out while the page was loading
-    if ($("tour").hidden) return;
     for (const sel of step.open || []) {
       const box = document.querySelector(sel);
       if (box && !box.open) {
@@ -1470,7 +1466,7 @@ async function enterTourStep(index, direction) {
 
   tour.index = index;
   const step = tour.steps[index];
-  $("tour-step").textContent = `${index + 1} / ${tour.steps.length}`;
+  $("tour-step").textContent = `${PAGE_NAMES[tour.page]} · ${index + 1} / ${tour.steps.length}`;
   $("tour-title").textContent = step.title;
   $("tour-text").textContent = step.text;
   $("tour-back").disabled = index === 0;
@@ -1479,7 +1475,6 @@ async function enterTourStep(index, direction) {
   const target = step.target && document.querySelector(step.target);
   if (target) target.scrollIntoView({ block: "center", behavior: "instant" });
   placeTour();
-  $("tour").querySelector(".tour-tip").classList.remove("waiting");
   $("tour-next").focus();
 }
 
@@ -1537,7 +1532,6 @@ function placeTour() {
 }
 
 function tourKeys(e) {
-  if (tour.busy) return;
   if (e.key === "Escape") finishTour();
   else if (e.key === "ArrowRight") showTourStep(tour.index + 1, 1);
   else if (e.key === "ArrowLeft" && tour.index > 0) showTourStep(tour.index - 1, -1);
@@ -1554,35 +1548,45 @@ function closeTour() {
 }
 
 async function finishTour() {
+  const page = tour.page;
   closeTour();
   // normally recorded when the tour was started; retried here in case that failed
-  if (!state.user.tourDone) await markTourDone().catch(reportError);
-  await openView("tasks");
+  if (!tourDone(page)) await markTourDone(page).catch(reportError);
 }
 
 $("tour-next").addEventListener("click", () => showTourStep(tour.index + 1, 1));
 $("tour-back").addEventListener("click", () => showTourStep(tour.index - 1, -1));
 $("tour-skip").addEventListener("click", () => finishTour());
 
-// ---------- bottom-left corner: tour offer, then Help ----------
-// The tour is only ever offered, never started for you. Until it is taken or declined the corner offers it;
-// after that the corner is a small Help button.
+// ---------- bottom-left corner: this page's tour offer, then Help ----------
+// A tour is only ever offered, never started for you. Until a page's tour is taken or declined the corner offers it;
+// after that the corner is a small Help button that can replay it.
 
-function renderHelp() {
-  const loggedIn = Boolean(state.token && state.user);
-  $("help").hidden = !loggedIn;
-  if (!loggedIn) return;
-  $("tour-invite").hidden = state.user.tourDone;
-  $("help-box").hidden = !state.user.tourDone;
-  closeHelpMenu();
+function tourDone(page) {
+  return (state.user?.toursDone || []).includes(page);
 }
 
-// Taking or declining the offer both count, once per account, so it is recorded on the server
-async function markTourDone() {
-  if (state.user.tourDone) return;
-  await api(`${USERS}/users/${encodeURIComponent(state.user.studentId)}/tour`, { method: "PUT" });
-  state.user.tourDone = true;
-  renderHelp();
+function renderHelp() {
+  const page = state.view;
+  const show = Boolean(state.token && state.user && TOURS[page]);
+  $("help").hidden = !show;
+  closeHelpMenu();
+  if (!show) return;
+  const done = tourDone(page);
+  $("tour-invite").hidden = done;
+  $("help-box").hidden = !done;
+  $("tour-invite-title").textContent = page === "tasks" ? "New here?" : `First time on ${PAGE_NAMES[page]}?`;
+  $("tour-invite-text").textContent = page === "tasks"
+    ? "A short tour of this page and the menu above. It takes about a minute."
+    : `A short tour of the ${PAGE_NAMES[page]} page. It takes under a minute.`;
+}
+
+// Taking or declining a page's offer both count, once per account, so it is recorded on the server
+async function markTourDone(page) {
+  if (tourDone(page)) return;
+  const { toursDone } = await api(`${USERS}/users/${encodeURIComponent(state.user.studentId)}/tours/${page}`, { method: "PUT" });
+  state.user.toursDone = toursDone;
+  if (state.view === page) renderHelp();
 }
 
 function closeHelpMenu() {
@@ -1591,12 +1595,13 @@ function closeHelpMenu() {
 }
 
 $("btn-tour").addEventListener("click", async () => {
-  await markTourDone().catch(reportError);
-  startTour();
+  const page = state.view;
+  await markTourDone(page).catch(reportError);
+  startTour(page);
 });
 
 $("tour-decline").addEventListener("click", async () => {
-  await markTourDone().catch(reportError);
+  await markTourDone(state.view).catch(reportError);
 });
 
 $("btn-help").addEventListener("click", () => {
@@ -1607,7 +1612,7 @@ $("btn-help").addEventListener("click", () => {
 
 $("btn-tour-again").addEventListener("click", () => {
   closeHelpMenu();
-  startTour();
+  startTour(state.view);
 });
 
 document.addEventListener("click", (e) => {

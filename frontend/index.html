@@ -51,7 +51,7 @@
           <button type="submit">Create account</button>
         </form>
 
-        <p class="hint auth-note">New here? After you log in, a short tour of every page is one click away, whenever you want it.</p>
+        <p class="hint auth-note">New here? After you log in, each page offers its own short tour, whenever you want it.</p>
       </section>
     </div>
 
@@ -491,11 +491,11 @@
     </div>
   </dialog>
 
-  <!-- Bottom-left corner: an offer of the tour until it is taken or declined, then a Help button -->
+  <!-- Bottom-left corner: this page's tour offer until it is taken or declined, then a Help button -->
   <aside id="help" hidden>
     <section class="card help-invite" id="tour-invite" hidden aria-label="Tour">
-      <h2>New here?</h2>
-      <p>A short tour shows what every page and button does. It takes about a minute.</p>
+      <h2 id="tour-invite-title">New here?</h2>
+      <p id="tour-invite-text">A short tour of this page. It takes about a minute.</p>
       <div class="row">
         <button type="button" class="small" id="btn-tour">Take a short tour</button>
         <button type="button" class="ghost small" id="tour-decline">No thanks</button>
@@ -510,7 +510,7 @@
     </div>
   </aside>
 
-  <!-- First-login tour: dims the page, outlines one thing at a time and explains it -->
+  <!-- Page tour: dims the page, outlines one thing at a time and explains it -->
   <div id="tour" hidden>
     <div class="tour-spot" aria-hidden="true"></div>
     <section class="tour-tip card" role="dialog" aria-modal="true" aria-labelledby="tour-title">

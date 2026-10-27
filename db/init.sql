@@ -143,3 +143,9 @@ CREATE TABLE IF NOT EXISTS task_audience_groups (
 
 -- user-service: when the user finished or skipped the first-login tour (NULL = show it)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tour_done_at TIMESTAMPTZ;
+
+-- user-service: pages whose tour the user took or declined (tasks, discover, viewers, account, admin).
+-- Replaces the single tour_done_at flag; whoever finished the old all-pages tour has seen every page.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tours_done TEXT[] NOT NULL DEFAULT '{}';
+UPDATE users SET tours_done = ARRAY['tasks', 'discover', 'viewers', 'account', 'admin']
+    WHERE tour_done_at IS NOT NULL AND tours_done = '{}';

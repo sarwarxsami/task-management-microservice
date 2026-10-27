@@ -28,7 +28,7 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 ## Features
 
 - **Anti-social by design** — no notifications, messages, likes or "seen": you keep your tasks, choose who may see them, and never learn whether anyone did. The login page explains this idea next to the login card, with a **How it works** manual in six dropdown sections.
-- **Tour and Help** — nothing starts by itself: until a user takes or declines it, a small card in the bottom-left corner of every page offers a short tour, which outlines every page, button and section and explains it (Next / Back / Skip, arrow keys, Esc). After that the corner shows a **Help** button with **Take another tour**. Taking or declining is stored per account on the server.
+- **Page tours and Help** — nothing starts by itself. Tasks, Discover, Viewers, Account and Users each have their own short tour that stays on that page and outlines its buttons and sections (Next / Back / Skip, arrow keys, Esc); the Tasks tour also introduces the menu buttons without opening those pages. Until a page's tour is taken or declined, a small card in the bottom-left corner of that page offers it; after that the corner shows a **Help** button with **Take another tour** for that page. Stored per account and page on the server.
 - **Accounts** — register / log in with student ID and password (bcrypt-hashed), JWT sessions, change name and password, delete own account.
 - **Roles** — everyone, admins included, manages only their own tasks. An `admin` additionally sees every account's name and username and can delete accounts; nothing else (no student IDs, no other users' tasks, no renaming or role changes). Admins are exactly the student IDs in `ADMIN_STUDENT_IDS`, checked on every request.
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
@@ -61,7 +61,7 @@ The token carries no role. Admin rights are read from `ADMIN_STUDENT_IDS` on eve
 | DELETE | `/service/user-service/users/by-id/:id` | admin | Delete a user (by the `id` from the list) and, via cascade, their tasks |
 | PUT | `/service/user-service/users/:studentId` | owner | `name`, `username`, `currentPassword` + `newPassword`. Roles cannot be changed |
 | DELETE | `/service/user-service/users/:studentId` | owner | Delete own account and (via cascade) own tasks |
-| PUT | `/service/user-service/users/:studentId/tour` | owner | Mark the first-login tour as finished or skipped (`tourDone` in the user object) |
+| PUT | `/service/user-service/users/:studentId/tours/:page` | owner | Mark a page's tour (`tasks`, `discover`, `viewers`, `account`, `admin`) as taken or declined → `{ toursDone }` (also in the user object) |
 
 **POST** `/service/user-service/auth/register`
 ```json
