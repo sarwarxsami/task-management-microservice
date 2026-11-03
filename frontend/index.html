@@ -36,19 +36,28 @@
         </div>
 
         <form id="form-login" class="form-group">
-          <label>Student ID<input name="studentId" autocomplete="username" required /></label>
+          <label>Username or Gmail<input name="login" autocomplete="username" required /></label>
           <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
           <button type="submit">Log in</button>
         </form>
 
         <form id="form-register" class="form-group" hidden>
           <label>Full name<input name="name" maxlength="100" autocomplete="name" required /></label>
-          <label>Student ID<input name="studentId" maxlength="50" pattern="[A-Za-z0-9_\-]+" title="Letters, digits, - or _" autocomplete="username" required /></label>
+          <label>Gmail<input name="email" type="email" maxlength="254" pattern="[^@\s]+@[Gg][Mm][Aa][Ii][Ll]\.[Cc][Oo][Mm]" title="A Gmail address, ending in @gmail.com" autocomplete="email" required /></label>
           <label>Username<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" title="3-30 letters, digits or _" placeholder="shown to other users" required /></label>
           <label>Password<input name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required /></label>
-          <p class="hint">Your student ID is only for logging in and is never shown to anyone. Others only see your name and username.</p>
-          <p class="hint">Already added before accounts existed? Register with your existing student ID to set a password.</p>
+          <p class="hint">Your Gmail is only for logging in and is never shown to anyone. Others only see your name and username.</p>
+          <button type="submit">Send code</button>
+        </form>
+
+        <form id="form-verify" class="form-group" hidden>
+          <p class="hint" id="verify-hint"></p>
+          <label>Code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" title="The 6 digits from the email" autocomplete="one-time-code" required /></label>
           <button type="submit">Create account</button>
+          <div class="row-actions start">
+            <button type="button" class="ghost small" id="btn-verify-resend">Send a new code</button>
+            <button type="button" class="ghost small" id="btn-verify-back">Back</button>
+          </div>
         </form>
 
         <p class="hint auth-note">New here? After you log in, each page offers its own short tour, whenever you want it.</p>
@@ -60,7 +69,7 @@
       <h1>A quiet place for your tasks.</h1>
 
       <ul class="creed">
-        <li><b>Nothing calls you back.</b> No notifications, no emails, no reminders. Nothing from here reaches you when you are away.</li>
+        <li><b>Nothing calls you back.</b> No notifications, no reminders. The only email you will ever get is a code you asked for.</li>
         <li><b>Nobody talks here.</b> No messages, no comments, no likes, no followers, no "seen".</li>
         <li><b>You write, and you let go.</b> You keep your tasks and choose who may see them. Whether anyone ever looks, you will never know.</li>
         <li><b>So there is nothing to check.</b> No one returns to see who reacted. Everyone is on their own, together with everyone else.</li>
@@ -129,8 +138,8 @@
         <details class="fold sub">
           <summary><h3>6 · Your account and privacy</h3></summary>
           <div class="fold-body">
-            <p>You log in with your student ID, which is never shown to anyone, admins included. Others only see your name and username.</p>
-            <p>In <b>Account</b> you can change your name, username and password, switch Listed / Unlisted, replay the tour, or delete your account with all of your tasks.</p>
+            <p>You log in with your username or Gmail and your password. Your Gmail is never shown to anyone, admins included. Others only see your name and username.</p>
+            <p>In <b>Account</b> you can change your name, username, Gmail and password, switch Listed / Unlisted, or delete your account with all of your tasks. Help in the corner of each page replays that page's tour.</p>
             <p>Admins can only see each account's name and username and delete accounts. They cannot read your tasks.</p>
           </div>
         </details>
@@ -341,15 +350,29 @@
 
   <!-- ACCOUNT -->
   <main id="view-account" class="narrow" hidden>
-    <p id="username-notice" class="notice" hidden>Choose a username to finish setting up your account. Other users see your username, never your student ID.</p>
+    <p id="username-notice" class="notice" hidden>Choose a username to finish setting up your account. Other users see your username, never your email.</p>
 
     <section class="card" id="profile-card">
       <h2>Profile</h2>
       <form id="form-profile" class="form-group">
-        <label>Student ID<input id="profile-id" disabled /></label>
         <label>Full name<input name="name" maxlength="100" required /></label>
         <label>Username<input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" title="3-30 letters, digits or _" required /></label>
         <button type="submit">Save profile</button>
+      </form>
+    </section>
+
+    <section class="card" id="email-card">
+      <h2>Email</h2>
+      <p class="notice" id="email-notice" hidden>Add your Gmail so you can log in with it as well as your username.</p>
+      <p class="hint" id="email-current" hidden></p>
+      <form id="form-email" class="form-group">
+        <label>Gmail<input name="email" type="email" maxlength="254" pattern="[^@\s]+@[Gg][Mm][Aa][Ii][Ll]\.[Cc][Oo][Mm]" title="A Gmail address, ending in @gmail.com" autocomplete="email" required /></label>
+        <button type="submit">Send code</button>
+      </form>
+      <form id="form-email-code" class="form-group" hidden>
+        <p class="hint" id="email-code-hint"></p>
+        <label>Code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" title="The 6 digits from the email" autocomplete="one-time-code" required /></label>
+        <button type="submit">Save email</button>
       </form>
     </section>
 

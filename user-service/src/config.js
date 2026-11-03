@@ -16,6 +16,12 @@ module.exports = {
     JWT_SECRET,
     INTERNAL_API_KEY,
     JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "8h",
+    SMTP: {
+        host: process.env.SMTP_HOST || "smtp.gmail.com",
+        port: Number(process.env.SMTP_PORT || 465),
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+    },
     ADMIN_STUDENT_IDS: (process.env.ADMIN_STUDENT_IDS || "")
         .split(",")
         .map(id => id.trim())

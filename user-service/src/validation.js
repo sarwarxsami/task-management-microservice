@@ -1,12 +1,17 @@
-const STUDENT_ID = /^[A-Za-z0-9_-]{1,50}$/;
 const USERNAME = /^[a-z0-9_]{3,30}$/;
+const GMAIL = /^[a-z0-9][a-z0-9.+_-]{0,63}@gmail\.com$/;
 
 function validName(name) {
     return typeof name === "string" && name.trim().length > 0 && name.trim().length <= 100;
 }
 
-function validStudentId(studentId) {
-    return typeof studentId === "string" && STUDENT_ID.test(studentId);
+// Emails are stored lowercase
+function normalizeEmail(email) {
+    return typeof email === "string" ? email.trim().toLowerCase() : "";
+}
+
+function validGmail(email) {
+    return GMAIL.test(email);
 }
 
 // Usernames are stored lowercase
@@ -22,4 +27,4 @@ function validPassword(password) {
     return typeof password === "string" && password.length >= 8 && password.length <= 72;
 }
 
-module.exports = { validName, validStudentId, validPassword, normalizeUsername, validUsername };
+module.exports = { validName, validPassword, normalizeUsername, validUsername, normalizeEmail, validGmail };

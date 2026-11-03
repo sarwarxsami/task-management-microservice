@@ -3,8 +3,10 @@ const bcrypt = require('bcryptjs');
 const router = express.Router();
 const pool = require('../models/db');
 const { requireAuth, requireAdmin, requireSelf } = require('../middleware/auth');
-const { validName, validPassword, normalizeUsername, validUsername } = require('../validation');
-const { USERNAME_TAKEN } = require('./authRoutes');
+const mailer = require('../mailer');
+const { CODE_MINUTES, MAX_ATTEMPTS, RESEND_SECONDS, newCode, hashCode, codeMatches } = require('../emailCodes');
+const { validName, validPassword, normalizeUsername, validUsername, normalizeEmail, validGmail } = require('../validation');
+const { codeLimiter, USERNAME_TAKEN, EMAIL_TAKEN } = require('./authRoutes');
 
 router.use(requireAuth);
 
@@ -92,6 +94,75 @@ router.put("/:studentId", requireSelf, async (req, res) => {
 
     const row = result.rows[0];
     return res.json({ name: row.name, studentId: row.student_id, username: row.username, role: row.role });
+});
+
+// POST /service/user-service/users/:studentId/email (owner): emails a code to a new address
+router.post("/:studentId/email", requireSelf, codeLimiter, async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+
+    if (!validGmail(email)) {
+        return res.status(400).json({ error: "A Gmail address is required" });
+    }
+    if (!mailer.configured()) {
+        return res.status(503).json({ error: "Email codes are not available right now" });
+    }
+    const taken = await pool.query("SELECT 1 FROM users WHERE email = $1", [email]);
+    if (taken.rows.length > 0) {
+        return res.status(409).json({ error: "Email is already registered" });
+    }
+
+    const code = newCode();
+    const saved = await pool.query(
+        `INSERT INTO pending_emails (student_id, email, code_hash, expires_at)
+         VALUES ($1, $2, $3, now() + make_interval(mins => $4))
+         ON CONFLICT (student_id) DO UPDATE
+             SET email = EXCLUDED.email, code_hash = EXCLUDED.code_hash, attempts = 0,
+                 expires_at = EXCLUDED.expires_at, sent_at = now()
+             WHERE pending_emails.sent_at < now() - make_interval(secs => $5)
+         RETURNING email`,
+        [req.params.studentId, email, hashCode(code), CODE_MINUTES, RESEND_SECONDS]
+    );
+    if (saved.rows.length === 0) {
+        return res.status(429).json({ error: "A code was just sent. Wait a minute before asking for another" });
+    }
+
+    try {
+        await mailer.sendCode(email, code);
+    } catch (error) {
+        console.error("Could not send code:", error.message);
+        await pool.query("DELETE FROM pending_emails WHERE student_id = $1", [req.params.studentId]);
+        return res.status(502).json({ error: "Could not send the email. Try again later" });
+    }
+    return res.status(202).json({ email });
+});
+
+// POST /service/user-service/users/:studentId/email/verify (owner): the right code saves the address
+router.post("/:studentId/email/verify", requireSelf, async (req, res) => {
+    const code = req.body?.code;
+    const pending = await pool.query(
+        `UPDATE pending_emails SET attempts = attempts + 1
+         WHERE student_id = $1 AND attempts < $2 AND expires_at > now()
+         RETURNING email, code_hash`,
+        [req.params.studentId, MAX_ATTEMPTS]
+    );
+    const row = pending.rows[0];
+    if (!row) {
+        return res.status(400).json({ error: "This code has expired. Ask for a new one" });
+    }
+    if (typeof code !== "string" || !codeMatches(code.trim(), row.code_hash)) {
+        return res.status(400).json({ error: "Wrong code" });
+    }
+
+    try {
+        await pool.query("UPDATE users SET email = $1 WHERE student_id = $2", [row.email, req.params.studentId]);
+    } catch (error) {
+        if (error.constraint === EMAIL_TAKEN) {
+            return res.status(409).json({ error: "Email is already registered" });
+        }
+        throw error;
+    }
+    await pool.query("DELETE FROM pending_emails WHERE student_id = $1", [req.params.studentId]);
+    return res.json({ email: row.email });
 });
 
 const TOUR_PAGES = ["tasks", "discover", "viewers", "account", "admin"];

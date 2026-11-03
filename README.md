@@ -29,11 +29,11 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 
 - **Anti-social by design** — no notifications, messages, likes or "seen": you keep your tasks, choose who may see them, and never learn whether anyone did. The login page explains this idea next to the login card, with a **How it works** manual in six dropdown sections.
 - **Page tours and Help** — nothing starts by itself. Tasks, Discover, Viewers, Account and Users each have their own short tour that stays on that page and outlines its buttons and sections (Next / Back / Skip, arrow keys, Esc); the Tasks tour also introduces the menu buttons without opening those pages. Until a page's tour is taken or declined, a small card in the bottom-left corner of that page offers it; after that the corner shows a **Help** button with **Take another tour** for that page. Stored per account and page on the server.
-- **Accounts** — register / log in with student ID and password (bcrypt-hashed), JWT sessions, change name and password, delete own account.
-- **Roles** — everyone, admins included, manages only their own tasks. An `admin` additionally sees every account's name and username and can delete accounts; nothing else (no student IDs, no other users' tasks, no renaming or role changes). Admins are exactly the student IDs in `ADMIN_STUDENT_IDS`, checked on every request.
+- **Accounts** — register with a Gmail address, confirmed by a 6-digit emailed code, and log in with username or Gmail plus password (bcrypt-hashed). JWT sessions, change name, username, Gmail and password, delete own account. Accounts from before email existed log in with their username and can add a Gmail in Account.
+- **Roles** — everyone, admins included, manages only their own tasks. An `admin` additionally sees every account's name and username and can delete accounts; nothing else (no email addresses, no other users' tasks, no renaming or role changes). Admins are exactly the internal account keys in `ADMIN_STUDENT_IDS`, checked on every request.
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
 - **Organising** — summary counts (total, active, completed, due today, overdue), status filter (all / active / completed / overdue), search, sort by newest, deadline, priority or title, overdue and due-soon highlighting.
-- **Usernames** — every user has a unique public username, separate from their name and student ID.
+- **Usernames** — every user has a unique public username, separate from their name and email.
 - **Task visibility** — each task is **Only Me** (default), **Trusted** or **Open**. A Trusted task is shown to **All Trusted** (everyone on Your Task Viewers), only to **Hand-picked** people chosen from that list in a searchable picker, or to one or more **Groups**.
 - **Groups** — inside Your Task Viewers you can create, rename and delete groups and add or remove members; a person can be in several groups, and viewers in no group form the **Default** group. Every Trusted task in My tasks has a **Who can see** button listing its groups (with members) and the Default people one by one.
 - **Your Task Viewers / View Tasks** — choose who can see your Trusted tasks (one-way), and see the tasks of people who added you. You can **leave** anyone's list from View Tasks (also an Unlisted owner's, without learning who it is); they are not told.
@@ -47,33 +47,36 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 All endpoints except `health`, `register` and `login` require `Authorization: Bearer <token>`.
 
 ### user-service — Node.js
-Owns users, usernames and authentication; issues HS256 JWTs (`sub` = student ID, `name`, 8h expiry). Login/register are rate-limited per client IP (20 failed attempts per 15 minutes).
+Owns users, usernames, emails and authentication; issues HS256 JWTs (`sub` = internal account key, `name`, 8h expiry). The `student_id` column is that key: it is never shown, and new accounts get a random one. Login and code checks are rate-limited per client IP (20 failed attempts per 15 minutes), asking for codes to 30 per hour per IP and one per minute per address. Codes last 10 minutes, allow 5 attempts and are stored hashed. Codes are sent through Gmail SMTP (`SMTP_USER`, `SMTP_PASS`); without them the service runs but registering answers `503`.
 
 The token carries no role. Admin rights are read from `ADMIN_STUDENT_IDS` on every request (the stored `role` column is synced to it on login and `/auth/me`, demoting as well as promoting), so removing an ID takes effect without waiting for tokens to expire. All three services reject tokens of deleted accounts.
 
 | Method | Endpoint | Access | Description |
 |---|---|---|---|
 | GET | `/service/user-service/health` | public | Health check |
-| POST | `/service/user-service/auth/register` | public | Create an account → `{ token, user }` |
-| POST | `/service/user-service/auth/login` | public | Log in → `{ token, user }` |
+| POST | `/service/user-service/auth/register` | public | Check the details and email a code; no account yet |
+| POST | `/service/user-service/auth/register/verify` | public | `{ email, code }` — create the account → `{ token, user }` |
+| POST | `/service/user-service/auth/login` | public | `{ login, password }`, login being a username or email → `{ token, user }` |
 | GET | `/service/user-service/auth/me` | any user | Current user |
 | GET | `/service/user-service/users` | admin | List users → `[{ id, name, username }]` only |
 | DELETE | `/service/user-service/users/by-id/:id` | admin | Delete a user (by the `id` from the list) and, via cascade, their tasks |
 | PUT | `/service/user-service/users/:studentId` | owner | `name`, `username`, `currentPassword` + `newPassword`. Roles cannot be changed |
 | DELETE | `/service/user-service/users/:studentId` | owner | Delete own account and (via cascade) own tasks |
+| POST | `/service/user-service/users/:studentId/email` | owner | `{ email }` — email a code to a new Gmail address |
+| POST | `/service/user-service/users/:studentId/email/verify` | owner | `{ code }` — save that address |
 | PUT | `/service/user-service/users/:studentId/tours/:page` | owner | Mark a page's tour (`tasks`, `discover`, `viewers`, `account`, `admin`) as taken or declined → `{ toursDone }` (also in the user object) |
 
 **POST** `/service/user-service/auth/register`
 ```json
 {
     "name": "Sami Sarwar",
-    "studentId": "12345",
+    "email": "sami@gmail.com",
     "username": "sami",
     "password": "at-least-8-chars"
 }
 ```
 
-Users created before accounts existed have no password; registering with their student ID sets one (once).
+Only `@gmail.com` addresses are accepted.
 
 ---
 
@@ -138,7 +141,7 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 - Adding someone to Your Task Viewers is one-way. A **Viewer Access Request** asks someone to add you to theirs.
 - A Hand-picked or Group task never falls back to All Trusted: if every picked person leaves Your Task Viewers, or every chosen group is deleted, it is visible to nobody else. A new Hand-picked or Group task is saved as Only Me until its audience is stored, so it is never briefly visible to all trusted viewers.
 - Removing someone from Your Task Viewers also removes them from all of your groups.
-- Other users see usernames, never student IDs. Admins get no extra access here and are treated like everyone else.
+- Other users see names and usernames, never email addresses. Admins get no extra access here and are treated like everyone else.
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -205,7 +208,7 @@ Not routed by Nginx (it only proxies `/service/<name>/...`) and protected by the
 - **Custom Docker networks** — `user-net` connects user-service and postgres; `task-net` connects task-service and postgres; social-service and Nginx sit on both networks to reach the services they call.
 - **Service-to-service API** — social-service calls internal endpoints of user-service and task-service over the Docker network, authenticated with a shared `INTERNAL_API_KEY`; Nginx never routes `/internal/*`.
 - **Named volumes** — postgres data persisted in a named Docker volume so data survives container restarts.
-- **Environment variables via env\_file** — credentials are not hard-coded; Postgres and all three services read from a `.env` file on the VM that is git-ignored and never baked into an image. `.env.example` lists the required keys (`DB_*`, `JWT_SECRET`, `INTERNAL_API_KEY`, `ADMIN_STUDENT_IDS`).
+- **Environment variables via env\_file** — credentials are not hard-coded; Postgres and all three services read from a `.env` file on the VM that is git-ignored and never baked into an image. `.env.example` lists the required keys (`DB_*`, `JWT_SECRET`, `INTERNAL_API_KEY`, `ADMIN_STUDENT_IDS`, `SMTP_USER`, `SMTP_PASS`).
 - **GitHub Actions CI/CD pipeline** — on every push to `main`, the workflow validates the compose and Nginx configs, runs all three services' integration tests against a Postgres service container, builds all three images and pushes them to Docker Hub tagged `latest` and the commit SHA, copies the compose file, Nginx config, SQL and frontend to the VM via SCP, runs `docker compose pull && docker compose up -d` with that SHA (no `down`, so no full outage), and finishes with a smoke test against the live HTTPS endpoints (health checks plus a check that protected endpoints reject anonymous requests).
 - **Docker Hub image registry** — built images stored at `sarwarxsami/task-service`, `sarwarxsami/user-service` and `sarwarxsami/social-service`. Every commit has its own tag, so rolling back is `IMAGE_TAG=<old-sha> docker compose up -d`.
 - **SSH key-pair authentication** — dedicated ED25519 key pair generated for GitHub Actions; public key on the VM, private key stored as a GitHub Secret.

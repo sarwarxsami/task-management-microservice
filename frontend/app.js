@@ -224,10 +224,10 @@ function showView(name) {
   });
 
   if (name === "account") {
-    $("profile-id").value = state.user.studentId;
     $("form-profile").elements.name.value = state.user.name;
     $("form-profile").elements.username.value = state.user.username || "";
     $("username-notice").hidden = Boolean(state.user.username);
+    renderEmail();
   }
   if (name === "admin") renderUsers();
   if (name !== "auth" && name !== "space") store.set("tms.view", name);
@@ -248,6 +248,7 @@ document.querySelectorAll("[data-auth-tab]").forEach((tab) => {
     const login = tab.dataset.authTab === "login";
     $("form-login").hidden = !login;
     $("form-register").hidden = login;
+    $("form-verify").hidden = true;
     document.querySelectorAll("[data-auth-tab]").forEach((t) => t.classList.toggle("active", t === tab));
   });
 });
@@ -264,16 +265,57 @@ $("form-login").addEventListener("submit", (e) => {
   });
 });
 
+// Registering has two steps: the details are checked and a code is emailed, then the code creates the account
+let registration = null;
+
+async function sendRegistrationCode() {
+  await api(`${USERS}/auth/register`, { method: "POST", body: registration });
+  $("verify-hint").textContent = `We sent a 6-digit code to ${registration.email}. It expires in 10 minutes. Check your spam folder if you do not see it.`;
+}
+
 $("form-register").addEventListener("submit", (e) => {
   e.preventDefault();
   const form = e.currentTarget;
   withBusy(form, async () => {
-    const { token, user } = await api(`${USERS}/auth/register`, { method: "POST", body: formData(form) });
+    registration = formData(form);
+    await sendRegistrationCode();
+    form.hidden = true;
+    $("form-verify").hidden = false;
+    $("form-verify").elements.code.focus();
+  });
+});
+
+$("form-verify").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  withBusy(form, async () => {
+    const { token, user } = await api(`${USERS}/auth/register/verify`, {
+      method: "POST",
+      body: { email: registration.email, code: form.elements.code.value },
+    });
+    registration = null;
     saveSession(token, user);
     form.reset();
+    form.hidden = true;
+    $("form-register").reset();
+    $("form-login").hidden = false;
+    document.querySelectorAll("[data-auth-tab]").forEach((t) => t.classList.toggle("active", t.dataset.authTab === "login"));
     await startSession();
     toast(`Account created. Welcome, ${user.name}`);
   });
+});
+
+$("btn-verify-resend").addEventListener("click", () => {
+  withBusy($("form-verify"), async () => {
+    await sendRegistrationCode();
+    toast("A new code is on its way");
+  });
+});
+
+$("btn-verify-back").addEventListener("click", () => {
+  $("form-verify").reset();
+  $("form-verify").hidden = true;
+  $("form-register").hidden = false;
 });
 
 // ---------- tasks ----------
@@ -764,6 +806,46 @@ $("form-profile").addEventListener("submit", (e) => {
     name: form.elements.name.value,
     username: form.elements.username.value,
   }, "Profile updated"));
+});
+
+function renderEmail() {
+  const { email } = state.user;
+  $("email-notice").hidden = Boolean(email);
+  $("email-current").hidden = !email;
+  $("email-current").textContent = email ? `Your Gmail: ${email}. Only you can see it. Enter a new one to change it.` : "";
+  $("form-email").hidden = false;
+  $("form-email-code").hidden = true;
+}
+
+$("form-email").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  withBusy(form, async () => {
+    const { email } = await api(`${USERS}/users/${encodeURIComponent(state.user.studentId)}/email`, {
+      method: "POST",
+      body: { email: form.elements.email.value },
+    });
+    form.reset();
+    form.hidden = true;
+    $("email-code-hint").textContent = `We sent a 6-digit code to ${email}. Check your spam folder if you do not see it.`;
+    $("form-email-code").hidden = false;
+    $("form-email-code").elements.code.focus();
+  });
+});
+
+$("form-email-code").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  withBusy(form, async () => {
+    const { email } = await api(`${USERS}/users/${encodeURIComponent(state.user.studentId)}/email/verify`, {
+      method: "POST",
+      body: { code: form.elements.code.value },
+    });
+    state.user.email = email;
+    form.reset();
+    renderEmail();
+    toast("Email saved");
+  });
 });
 
 async function loadSettings() {
@@ -1325,7 +1407,7 @@ const TOURS = {
       target: "#nav-admin",
       admin: true,
       title: "Users (admins only)",
-      text: "The name and username of every account, with Delete. Admins cannot see anyone's tasks or student IDs.",
+      text: "The name and username of every account, with Delete. Admins cannot see anyone's tasks or email addresses.",
     },
     { target: "#btn-logout", title: "Log out", text: "Ends your session on this device." },
     {
@@ -1412,7 +1494,12 @@ const TOURS = {
     {
       target: "#profile-card",
       title: "Profile",
-      text: "Change your name and username. Your student ID is only for logging in and is never shown to others.",
+      text: "Change your name and username. Other people see these, never your email.",
+    },
+    {
+      target: "#email-card",
+      title: "Email",
+      text: "Your Gmail, for logging in. Changing it needs a code sent to the new address. Nobody else can see it.",
     },
     {
       target: "#listed-card",
@@ -1427,7 +1514,7 @@ const TOURS = {
     {
       target: "#users-card",
       title: "Users",
-      text: "Every account's name and username, with Delete. Deleting removes the account and all of its tasks. Admins cannot see student IDs or anyone's tasks.",
+      text: "Every account's name and username, with Delete. Deleting removes the account and all of its tasks. Admins cannot see email addresses or anyone's tasks.",
     },
     HELP_STEP,
   ],
