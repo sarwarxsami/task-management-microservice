@@ -155,7 +155,7 @@ UPDATE users SET tours_done = ARRAY['tasks', 'discover', 'viewers', 'account', '
 ALTER TABLE task_viewers ADD COLUMN IF NOT EXISTS id SERIAL;
 CREATE UNIQUE INDEX IF NOT EXISTS task_viewers_id_key ON task_viewers (id);
 
--- user-service: Gmail login. student_id stays as the internal account key (never shown); accounts
+-- user-service: email login. student_id stays as the internal account key (never shown); accounts
 -- from before email existed have no address until they add one
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(254);
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_key ON users (email);
@@ -176,6 +176,15 @@ CREATE TABLE IF NOT EXISTS pending_registrations (
 CREATE TABLE IF NOT EXISTS pending_emails (
     student_id VARCHAR(50) PRIMARY KEY REFERENCES users(student_id) ON DELETE CASCADE,
     email VARCHAR(254) NOT NULL,
+    code_hash TEXT NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    expires_at TIMESTAMPTZ NOT NULL,
+    sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- user-service: password resets waiting for the emailed code
+CREATE TABLE IF NOT EXISTS pending_resets (
+    student_id VARCHAR(50) PRIMARY KEY REFERENCES users(student_id) ON DELETE CASCADE,
     code_hash TEXT NOT NULL,
     attempts INT NOT NULL DEFAULT 0,
     expires_at TIMESTAMPTZ NOT NULL,

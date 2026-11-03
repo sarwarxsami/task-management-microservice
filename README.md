@@ -29,7 +29,7 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 
 - **Anti-social by design** — no notifications, messages, likes or "seen": you keep your tasks, choose who may see them, and never learn whether anyone did. The login page explains this idea next to the login card, with a **How it works** manual in six dropdown sections.
 - **Page tours and Help** — nothing starts by itself. Tasks, Discover, Viewers, Account and Users each have their own short tour that stays on that page and outlines its buttons and sections (Next / Back / Skip, arrow keys, Esc); the Tasks tour also introduces the menu buttons without opening those pages. Until a page's tour is taken or declined, a small card in the bottom-left corner of that page offers it; after that the corner shows a **Help** button with **Take another tour** for that page. Stored per account and page on the server.
-- **Accounts** — register with a Gmail address, confirmed by a 6-digit emailed code, and log in with username or Gmail plus password (bcrypt-hashed). JWT sessions, change name, username, Gmail and password, delete own account. Accounts from before email existed log in with their username and can add a Gmail in Account.
+- **Accounts** — register with an email address, confirmed by a 6-digit emailed code, and log in with username or email plus password (bcrypt-hashed). JWT sessions, change name, username, email and password, reset a forgotten password with an emailed code, delete own account. Accounts from before email existed log in with their username and can add an email in Account.
 - **Roles** — everyone, admins included, manages only their own tasks. An `admin` additionally sees every account's name and username and can delete accounts; nothing else (no email addresses, no other users' tasks, no renaming or role changes). Admins are exactly the internal account keys in `ADMIN_STUDENT_IDS`, checked on every request.
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
 - **Organising** — summary counts (total, active, completed, due today, overdue), status filter (all / active / completed / overdue), search, sort by newest, deadline, priority or title, overdue and due-soon highlighting.
@@ -57,12 +57,14 @@ The token carries no role. Admin rights are read from `ADMIN_STUDENT_IDS` on eve
 | POST | `/service/user-service/auth/register` | public | Check the details and email a code; no account yet |
 | POST | `/service/user-service/auth/register/verify` | public | `{ email, code }` — create the account → `{ token, user }` |
 | POST | `/service/user-service/auth/login` | public | `{ login, password }`, login being a username or email → `{ token, user }` |
+| POST | `/service/user-service/auth/password/forgot` | public | `{ email }` — emails a code if an account uses it; same answer either way |
+| POST | `/service/user-service/auth/password/reset` | public | `{ email, code, newPassword }` — set a new password |
 | GET | `/service/user-service/auth/me` | any user | Current user |
 | GET | `/service/user-service/users` | admin | List users → `[{ id, name, username }]` only |
 | DELETE | `/service/user-service/users/by-id/:id` | admin | Delete a user (by the `id` from the list) and, via cascade, their tasks |
 | PUT | `/service/user-service/users/:studentId` | owner | `name`, `username`, `currentPassword` + `newPassword`. Roles cannot be changed |
 | DELETE | `/service/user-service/users/:studentId` | owner | Delete own account and (via cascade) own tasks |
-| POST | `/service/user-service/users/:studentId/email` | owner | `{ email }` — email a code to a new Gmail address |
+| POST | `/service/user-service/users/:studentId/email` | owner | `{ email }` — email a code to a new address |
 | POST | `/service/user-service/users/:studentId/email/verify` | owner | `{ code }` — save that address |
 | PUT | `/service/user-service/users/:studentId/tours/:page` | owner | Mark a page's tour (`tasks`, `discover`, `viewers`, `account`, `admin`) as taken or declined → `{ toursDone }` (also in the user object) |
 
@@ -76,7 +78,7 @@ The token carries no role. Admin rights are read from `ADMIN_STUDENT_IDS` on eve
 }
 ```
 
-Only `@gmail.com` addresses are accepted.
+Any valid email address is accepted.
 
 ---
 

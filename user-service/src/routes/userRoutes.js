@@ -5,7 +5,7 @@ const pool = require('../models/db');
 const { requireAuth, requireAdmin, requireSelf } = require('../middleware/auth');
 const mailer = require('../mailer');
 const { CODE_MINUTES, MAX_ATTEMPTS, RESEND_SECONDS, newCode, hashCode, codeMatches } = require('../emailCodes');
-const { validName, validPassword, normalizeUsername, validUsername, normalizeEmail, validGmail } = require('../validation');
+const { validName, validPassword, normalizeUsername, validUsername, normalizeEmail, validEmail } = require('../validation');
 const { codeLimiter, USERNAME_TAKEN, EMAIL_TAKEN } = require('./authRoutes');
 
 router.use(requireAuth);
@@ -100,8 +100,8 @@ router.put("/:studentId", requireSelf, async (req, res) => {
 router.post("/:studentId/email", requireSelf, codeLimiter, async (req, res) => {
     const email = normalizeEmail(req.body?.email);
 
-    if (!validGmail(email)) {
-        return res.status(400).json({ error: "A Gmail address is required" });
+    if (!validEmail(email)) {
+        return res.status(400).json({ error: "A valid email is required" });
     }
     if (!mailer.configured()) {
         return res.status(503).json({ error: "Email codes are not available right now" });
@@ -162,6 +162,8 @@ router.post("/:studentId/email/verify", requireSelf, async (req, res) => {
         throw error;
     }
     await pool.query("DELETE FROM pending_emails WHERE student_id = $1", [req.params.studentId]);
+    // a reset code sent to the old address must not outlive it
+    await pool.query("DELETE FROM pending_resets WHERE student_id = $1", [req.params.studentId]);
     return res.json({ email: row.email });
 });
 

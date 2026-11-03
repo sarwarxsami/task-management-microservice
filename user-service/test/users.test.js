@@ -59,7 +59,7 @@ test("health check", async () => {
     assert.equal(res.status, 200);
 });
 
-test("register with a Gmail code, then log in with username or email", async () => {
+test("register with an emailed code, then log in with username or email", async () => {
     const start = await post("/auth/register").send(details("alice", { name: "Alice", email: " T.Alice@Gmail.com " }));
     assert.equal(start.status, 202);
     assert.equal(start.body.token, undefined);
@@ -96,11 +96,23 @@ test("student IDs no longer log anyone in", async () => {
     assert.equal((await post("/auth/login").send({ studentId: "t-old", password: PASSWORD })).status, 400);
 });
 
-test("register validates input and allows only Gmail", async () => {
+test("register accepts any valid email", async () => {
+    for (const [i, email] of ["t.any1@yahoo.com", "t.any2@ugrad.cse.buet.ac.bd", "t.any3@outlook.co.uk"].entries()) {
+        const res = await post("/auth/register").send(details(`any${i}`, { email }));
+        assert.equal(res.status, 202, email);
+        assert.ok(sent.has(email));
+    }
+    await pool.query("DELETE FROM pending_registrations WHERE email LIKE 't.any%'");
+});
+
+test("register validates input", async () => {
     for (const bad of [
-        details("bob", { email: "t.bob@yahoo.com" }),
-        details("bob", { email: "t.bob@gmail.com.evil.com" }),
         details("bob", { email: "not-an-email" }),
+        details("bob", { email: "t.bob@nodot" }),
+        details("bob", { email: "two words@gmail.com" }),
+        details("bob", { email: "a@b@gmail.com" }),
+        details("bob", { email: "a,b@gmail.com" }),
+        details("bob", { email: `${"x".repeat(250)}@gmail.com` }),
         details("bob", { password: "short" }),
         details("bob", { username: "no spaces!" }),
         details("bob", { name: " " }),
@@ -206,7 +218,7 @@ test("an old account adds its email with a code", async () => {
     const me = await auth(request(app).get(`${BASE}/auth/me`), old);
     assert.equal(me.body.email, null);
 
-    assert.equal((await auth(post(url), old).send({ email: "t.old@yahoo.com" })).status, 400);
+    assert.equal((await auth(post(url), old).send({ email: "not-an-email" })).status, 400);
     assert.equal((await auth(post(url), old).send({ email })).status, 202);
     assert.equal((await auth(post(`${url}/verify`), old).send({ code: "000000" })).status, 400);
     const ok = await auth(post(`${url}/verify`), old).send({ code: sent.get(email) });
@@ -302,6 +314,73 @@ test("page tours are remembered per account and page", async () => {
 
     const login = await post("/auth/login").send({ login: "t_bob", password: PASSWORD });
     assert.deepEqual(login.body.user.toursDone, ["tasks", "discover"]);
+});
+
+test("forgot password: the emailed code sets a new password", async () => {
+    await makeUser("bob", { email: "t.bob@gmail.com" });
+    const email = "t.bob@gmail.com";
+
+    assert.equal((await post("/auth/password/forgot").send({ email: " T.Bob@Gmail.com " })).status, 202);
+    const code = sent.get(email);
+    assert.match(code, /^\d{6}$/);
+
+    // a bad new password does not use up an attempt or the code
+    assert.equal((await post("/auth/password/reset").send({ email, code, newPassword: "short" })).status, 400);
+
+    const wrong = code === "111111" ? "222222" : "111111";
+    const bad = await post("/auth/password/reset").send({ email, code: wrong, newPassword: "brand-new-pass" });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error, "Wrong code");
+
+    assert.equal((await post("/auth/password/reset").send({ email, code, newPassword: "brand-new-pass" })).status, 204);
+    assert.equal((await post("/auth/login").send({ login: email, password: PASSWORD })).status, 401);
+    assert.equal((await post("/auth/login").send({ login: email, password: "brand-new-pass" })).status, 200);
+
+    // the code is used up
+    assert.equal((await post("/auth/password/reset").send({ email, code, newPassword: "another-pass-1" })).status, 400);
+});
+
+test("forgot password does not reveal who has an account", async () => {
+    await makeUser("bob", { email: "t.bob@gmail.com" });
+    const known = await post("/auth/password/forgot").send({ email: "t.bob@gmail.com" });
+    const unknown = await post("/auth/password/forgot").send({ email: "t.nobody@gmail.com" });
+    assert.equal(known.status, unknown.status);
+    assert.deepEqual(Object.keys(known.body), Object.keys(unknown.body));
+    assert.equal(sent.has("t.nobody@gmail.com"), false);
+
+    const a = await post("/auth/password/reset").send({ email: "t.nobody@gmail.com", code: "123456", newPassword: "brand-new-pass" });
+    assert.equal(a.status, 400);
+    assert.match(a.body.error, /expired/);
+
+    assert.equal((await post("/auth/password/forgot").send({ email: "not-an-email" })).status, 400);
+});
+
+test("forgot password limits attempts, resends and old addresses", async () => {
+    const bob = await makeUser("bob", { email: "t.bob@gmail.com" });
+    const email = "t.bob@gmail.com";
+    await post("/auth/password/forgot").send({ email });
+    const code = sent.get(email);
+
+    // asking again within a minute sends nothing new, with the same answer
+    sent.clear();
+    assert.equal((await post("/auth/password/forgot").send({ email })).status, 202);
+    assert.equal(sent.size, 0);
+
+    const wrong = code === "111111" ? "222222" : "111111";
+    for (let i = 0; i < 5; i++) {
+        await post("/auth/password/reset").send({ email, code: wrong, newPassword: "brand-new-pass" });
+    }
+    const locked = await post("/auth/password/reset").send({ email, code, newPassword: "brand-new-pass" });
+    assert.match(locked.body.error, /expired/);
+
+    // changing the email cancels a reset sent to the old address
+    await pool.query("UPDATE pending_resets SET attempts = 0, sent_at = now() - interval '2 minutes' WHERE student_id = 't-bob'");
+    await post("/auth/password/forgot").send({ email });
+    const resetCode = sent.get(email);
+    await auth(post("/users/t-bob/email"), bob).send({ email: "t.bob2@gmail.com" });
+    await auth(post("/users/t-bob/email/verify"), bob).send({ code: sent.get("t.bob2@gmail.com") });
+    const stale = await post("/auth/password/reset").send({ email: "t.bob2@gmail.com", code: resetCode, newPassword: "brand-new-pass" });
+    assert.equal(stale.status, 400);
 });
 
 test("rejects tampered tokens", async () => {

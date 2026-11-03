@@ -1040,6 +1040,13 @@ main.auth {
   margin: auto 0;
 }
 
+button.link.forgot {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
 .auth-note {
   border-top: 1px solid var(--border);
   padding-top: 14px;

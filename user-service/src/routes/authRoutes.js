@@ -7,7 +7,7 @@ const pool = require('../models/db');
 const { roleFor, signToken, requireAuth } = require('../middleware/auth');
 const mailer = require('../mailer');
 const { CODE_MINUTES, MAX_ATTEMPTS, RESEND_SECONDS, newCode, hashCode, codeMatches } = require('../emailCodes');
-const { validName, validPassword, normalizeUsername, validUsername, normalizeEmail, validGmail } = require('../validation');
+const { validName, validPassword, normalizeUsername, validUsername, normalizeEmail, validEmail } = require('../validation');
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -58,9 +58,9 @@ router.post("/register", codeLimiter, async (req, res) => {
     const username = normalizeUsername(req.body?.username);
     const email = normalizeEmail(req.body?.email);
 
-    if (!validName(name) || !validGmail(email) || !validPassword(password) || !validUsername(username)) {
+    if (!validName(name) || !validEmail(email) || !validPassword(password) || !validUsername(username)) {
         return res.status(400).json({
-            error: "Name (1-100 chars), a Gmail address, username (3-30 lowercase letters, digits or _) and password (8-72 chars) are required"
+            error: "Name (1-100 chars), a valid email, username (3-30 lowercase letters, digits or _) and password (8-72 chars) are required"
         });
     }
     if (!mailer.configured()) {
@@ -165,6 +165,73 @@ router.post("/login", authLimiter, async (req, res) => {
 
     await syncRole(user);
     return res.json({ token: signToken(user), user: publicUser(user) });
+});
+
+// POST /service/user-service/auth/password/forgot: emails a code if an account uses this address.
+// The answer and its timing are the same either way, so it cannot be used to find out who has an account.
+router.post("/password/forgot", codeLimiter, async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+
+    if (!validEmail(email)) {
+        return res.status(400).json({ error: "A valid email is required" });
+    }
+    if (!mailer.configured()) {
+        return res.status(503).json({ error: "Email codes are not available right now" });
+    }
+
+    const account = await pool.query("SELECT student_id FROM users WHERE email = $1", [email]);
+    const studentId = account.rows[0]?.student_id;
+    if (studentId) {
+        const code = newCode();
+        const saved = await pool.query(
+            `INSERT INTO pending_resets (student_id, code_hash, expires_at)
+             VALUES ($1, $2, now() + make_interval(mins => $3))
+             ON CONFLICT (student_id) DO UPDATE
+                 SET code_hash = EXCLUDED.code_hash, attempts = 0, expires_at = EXCLUDED.expires_at, sent_at = now()
+                 WHERE pending_resets.sent_at < now() - make_interval(secs => $4)
+             RETURNING student_id`,
+            [studentId, hashCode(code), CODE_MINUTES, RESEND_SECONDS]
+        );
+        if (saved.rows.length > 0) {
+            // not awaited: waiting for the mail server would show that the account exists
+            mailer.sendCode(email, code).catch(async (error) => {
+                console.error("Could not send code:", error.message);
+                await pool.query("DELETE FROM pending_resets WHERE student_id = $1", [studentId]);
+            });
+        }
+    }
+    return res.status(202).json({ email });
+});
+
+// POST /service/user-service/auth/password/reset: the right code sets the new password
+router.post("/password/reset", authLimiter, async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    const { code, newPassword } = req.body ?? {};
+
+    if (!validPassword(newPassword)) {
+        return res.status(400).json({ error: "Password must be 8-72 characters" });
+    }
+
+    // counts the attempt first, so parallel guesses cannot get past the limit
+    const pending = await pool.query(
+        `UPDATE pending_resets p SET attempts = p.attempts + 1
+         FROM users u
+         WHERE p.student_id = u.student_id AND u.email = $1 AND p.attempts < $2 AND p.expires_at > now()
+         RETURNING p.student_id, p.code_hash`,
+        [email, MAX_ATTEMPTS]
+    );
+    const row = pending.rows[0];
+    if (!row) {
+        return res.status(400).json({ error: "This code has expired. Ask for a new one" });
+    }
+    if (typeof code !== "string" || !codeMatches(code.trim(), row.code_hash)) {
+        return res.status(400).json({ error: "Wrong code" });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query("UPDATE users SET password_hash = $1 WHERE student_id = $2", [hash, row.student_id]);
+    await pool.query("DELETE FROM pending_resets WHERE student_id = $1", [row.student_id]);
+    return res.status(204).end();
 });
 
 // GET /service/user-service/auth/me

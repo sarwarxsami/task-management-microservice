@@ -249,6 +249,8 @@ document.querySelectorAll("[data-auth-tab]").forEach((tab) => {
     $("form-login").hidden = !login;
     $("form-register").hidden = login;
     $("form-verify").hidden = true;
+    $("form-forgot").hidden = true;
+    $("form-reset").hidden = true;
     document.querySelectorAll("[data-auth-tab]").forEach((t) => t.classList.toggle("active", t === tab));
   });
 });
@@ -262,6 +264,51 @@ $("form-login").addEventListener("submit", (e) => {
     form.reset();
     await startSession();
     toast(`Welcome back, ${user.name}`);
+  });
+});
+
+// Forgot password: an emailed code sets a new one. The answer never says whether the address has an account.
+let resetEmail = null;
+
+function backToLogin() {
+  $("form-forgot").reset();
+  $("form-reset").reset();
+  $("form-forgot").hidden = true;
+  $("form-reset").hidden = true;
+  $("form-login").hidden = false;
+}
+
+$("btn-forgot").addEventListener("click", () => {
+  $("form-login").hidden = true;
+  $("form-forgot").hidden = false;
+  $("form-forgot").elements.email.focus();
+});
+
+document.querySelectorAll("[data-back-to-login]").forEach((b) => b.addEventListener("click", backToLogin));
+
+$("form-forgot").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  withBusy(form, async () => {
+    const { email } = await api(`${USERS}/auth/password/forgot`, { method: "POST", body: { email: form.elements.email.value } });
+    resetEmail = email;
+    $("reset-hint").textContent = `If an account uses ${email}, a 6-digit code is on its way. It expires in 10 minutes. Check your spam folder if you do not see it.`;
+    form.hidden = true;
+    $("form-reset").hidden = false;
+    $("form-reset").elements.code.focus();
+  });
+});
+
+$("form-reset").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  withBusy(form, async () => {
+    await api(`${USERS}/auth/password/reset`, {
+      method: "POST",
+      body: { email: resetEmail, code: form.elements.code.value, newPassword: form.elements.newPassword.value },
+    });
+    backToLogin();
+    toast("Password changed. You can log in now");
   });
 });
 
@@ -812,7 +859,7 @@ function renderEmail() {
   const { email } = state.user;
   $("email-notice").hidden = Boolean(email);
   $("email-current").hidden = !email;
-  $("email-current").textContent = email ? `Your Gmail: ${email}. Only you can see it. Enter a new one to change it.` : "";
+  $("email-current").textContent = email ? `Your email: ${email}. Only you can see it. Enter a new one to change it.` : "";
   $("form-email").hidden = false;
   $("form-email-code").hidden = true;
 }
@@ -1499,7 +1546,7 @@ const TOURS = {
     {
       target: "#email-card",
       title: "Email",
-      text: "Your Gmail, for logging in. Changing it needs a code sent to the new address. Nobody else can see it.",
+      text: "Your email, for logging in. Changing it needs a code sent to the new address. Nobody else can see it.",
     },
     {
       target: "#listed-card",
