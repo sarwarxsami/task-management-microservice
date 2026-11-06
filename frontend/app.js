@@ -11,6 +11,7 @@ const state = {
   user: null,
   tasks: [],
   audiences: new Map(), // taskId -> audience of my Hand-picked / Group tasks
+  openTasks: new Set(), // ids of my tasks whose dropdown is open, kept when the list is redrawn
   users: [],
   status: "all",
   view: "tasks",
@@ -473,6 +474,13 @@ function renderTask(task) {
 
   fillTaskPills(item, task, state.audiences.get(task.id));
 
+  const fold = item.querySelector(".task-fold");
+  fold.open = state.openTasks.has(task.id);
+  fold.addEventListener("toggle", () => {
+    if (fold.open) state.openTasks.add(task.id);
+    else state.openTasks.delete(task.id);
+  });
+
   const who = item.querySelector('[data-action="who"]');
   who.hidden = task.visibility !== "trusted";
   who.addEventListener("click", () => showWhoCanSee(task));
@@ -927,9 +935,20 @@ $("form-email-code").addEventListener("submit", (e) => {
 });
 
 async function loadSettings() {
-  const { listed } = await api(`${SOCIAL}/settings`);
+  const { listed, stopRequests } = await api(`${SOCIAL}/settings`);
   document.querySelectorAll('input[name="listed"]').forEach((r) => { r.checked = r.value === String(listed); });
+  $("stop-requests").checked = stopRequests;
 }
+
+$("stop-requests").addEventListener("change", async (e) => {
+  try {
+    const { stopRequests } = await api(`${SOCIAL}/settings`, { method: "PUT", body: { stopRequests: e.target.checked } });
+    toast(stopRequests ? "Nobody can send you requests now" : "People can send you requests again");
+  } catch (err) {
+    reportError(err);
+    await loadSettings().catch(() => {});
+  }
+});
 
 document.querySelectorAll('input[name="listed"]').forEach((radio) => {
   radio.addEventListener("change", async () => {
@@ -1091,7 +1110,7 @@ function relationButtons(person, rel, refresh) {
     }));
   }
 
-  if (!rel.addedMe && person.listed) {
+  if (!rel.addedMe && person.listed && (rel.requestSentId || rel.acceptsRequests)) {
     if (rel.requestSentId) {
       buttons.push(button("Cancel request", "ghost small", async () => {
         await api(`${SOCIAL}/requests/${rel.requestSentId}`, { method: "DELETE" });
@@ -1201,7 +1220,9 @@ function renderSpace() {
     $("space-relation").textContent = "This is your Space. Others see only what your task visibility allows.";
   } else {
     $("space-relation").textContent = relationText(relationship)
-      || "You can see their Open tasks. Request access to see their Trusted tasks too.";
+      || (relationship.acceptsRequests
+        ? "You can see their Open tasks. Request access to see their Trusted tasks too."
+        : "You can see their Open tasks.");
     actions.append(...relationButtons(person, relationship, async () => {
       await openSpace(person.username);
       refreshRequestBadge();
@@ -1832,7 +1853,7 @@ const TOURS = {
     {
       target: "#tasks-card",
       title: "Your task list",
-      text: "Each task has a box to tick when it is done, Edit and Delete. Trusted tasks also have Who can see, listing exactly who that is right now. Clear completed removes all finished tasks at once.",
+      text: "Each task is a dropdown with a box to tick when it is done. Click a task to see its description, Edit and Delete; Trusted tasks also have Who can see, listing exactly who that is right now. Clear completed removes all finished tasks at once.",
     },
     HELP_STEP,
   ],
@@ -1898,7 +1919,7 @@ const TOURS = {
     {
       target: "#listed-card",
       title: "Space visibility",
-      text: "Listed: you appear in Discover and others can open your Space. Unlisted (the default): hidden, and your Space opens only for you.",
+      text: "Listed: you appear in Discover and others can open your Space. Unlisted (the default): hidden from everyone except the people on Your Task Viewers. You can also stop others from sending you requests.",
     },
     { target: "#password-card", title: "Change password", text: "Needs your current password." },
     { target: "#delete-card", title: "Delete account", text: "Removes your account and all of your tasks for good." },

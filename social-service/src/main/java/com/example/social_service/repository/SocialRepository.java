@@ -58,6 +58,22 @@ public class SocialRepository {
                 """, studentId, listed);
     }
 
+    public boolean stopsRequests(String studentId) {
+        return Boolean.TRUE.equals(jdbc.query("SELECT stop_requests FROM profiles WHERE student_id = ?",
+                rs -> rs.next() ? rs.getBoolean(1) : false, studentId));
+    }
+
+    public void setStopRequests(String studentId, boolean stop) {
+        jdbc.update("""
+                INSERT INTO profiles (student_id, stop_requests) VALUES (?, ?)
+                ON CONFLICT (student_id) DO UPDATE SET stop_requests = EXCLUDED.stop_requests, updated_at = now()
+                """, studentId, stop);
+    }
+
+    public Set<String> requestsStoppedIds() {
+        return new HashSet<>(jdbc.queryForList("SELECT student_id FROM profiles WHERE stop_requests", String.class));
+    }
+
     public Set<String> listedIds() {
         return new HashSet<>(jdbc.queryForList("SELECT student_id FROM profiles WHERE listed", String.class));
     }

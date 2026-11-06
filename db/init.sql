@@ -204,3 +204,6 @@ CREATE TABLE IF NOT EXISTS profile_details (
 
 CREATE INDEX IF NOT EXISTS idx_profile_details_user ON profile_details (student_id);
 CREATE UNIQUE INDEX IF NOT EXISTS profile_details_one_per_field ON profile_details (student_id, field) WHERE field <> 'custom';
+
+-- social-service: the user does not take Viewer Access Requests
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS stop_requests BOOLEAN NOT NULL DEFAULT false;

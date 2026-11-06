@@ -34,6 +34,7 @@ import com.example.social_service.dto.Dtos.ProfileDetail;
 import com.example.social_service.dto.Dtos.Relationship;
 import com.example.social_service.dto.Dtos.RequestEntry;
 import com.example.social_service.dto.Dtos.Requests;
+import com.example.social_service.dto.Dtos.Settings;
 import com.example.social_service.dto.Dtos.SharedTask;
 import com.example.social_service.dto.Dtos.Space;
 import com.example.social_service.dto.Dtos.ViewTasksEntry;
@@ -55,6 +56,7 @@ import com.example.social_service.repository.SocialRepository.TaskAudience;
  *              Hand-picked people, or members of chosen groups (Default = viewers in no group)
  *   open     - every logged-in user; an Unlisted owner is shown as "User is Unlisted"
  * Unlisted users are hidden from Discover, their Space opens only for themselves, and they cannot receive requests.
+ * The exception is the people on their own Your Task Viewers list, who see them as if they were Listed.
  * Admins get no extra access here: they are treated like every other user.
  */
 @Service
@@ -105,19 +107,24 @@ public class SocialService {
 
     // ---- settings ----
 
-    public boolean isListed(Caller caller) {
-        return repo.isListed(caller.studentId());
+    public Settings settings(Caller caller) {
+        return new Settings(repo.isListed(caller.studentId()), repo.stopsRequests(caller.studentId()));
     }
 
-    public boolean setListed(Caller caller, boolean listed) {
-        repo.setListed(caller.studentId(), listed);
-        return listed;
+    public Settings updateSettings(Caller caller, Settings body) {
+        if (body.listed() != null) {
+            repo.setListed(caller.studentId(), body.listed());
+        }
+        if (body.stopRequests() != null) {
+            repo.setStopRequests(caller.studentId(), body.stopRequests());
+        }
+        return settings(caller);
     }
 
     // ---- Discover ----
 
     public List<DiscoverEntry> discover(Caller caller) {
-        Set<String> listed = repo.listedIds();
+        Set<String> listed = openTo(caller);
         listed.remove(caller.studentId());
         Relations rel = relations(caller);
 
@@ -131,7 +138,7 @@ public class SocialService {
     public List<OpenTask> openTasks(Caller caller) {
         List<TaskInfo> open = tasks.openTasks(caller.studentId(), OPEN_FEED_LIMIT);
         Map<String, UserInfo> owners = users.byIds(open.stream().map(TaskInfo::studentId).collect(Collectors.toSet()));
-        Set<String> listed = repo.listedIds();
+        Set<String> listed = openTo(caller);
 
         return open.stream()
                 .map(t -> new OpenTask(SharedTask.of(t),
@@ -144,7 +151,8 @@ public class SocialService {
     public Space space(Caller caller, String username) {
         UserInfo target = requireUser(username);
         boolean self = target.studentId().equals(caller.studentId());
-        boolean listed = repo.isListed(target.studentId());
+        boolean addedMe = repo.isViewer(target.studentId(), caller.studentId());
+        boolean listed = repo.isListed(target.studentId()) || addedMe;
 
         if (!listed && !self) {
             throw new ApiException(HttpStatus.NOT_FOUND, "User is Unlisted");
@@ -267,7 +275,7 @@ public class SocialService {
     public List<Viewer> viewers(Caller caller) {
         List<Link> links = repo.viewersOf(caller.studentId());
         Map<String, UserInfo> info = users.byIds(ids(links));
-        Set<String> listed = repo.listedIds();
+        Set<String> listed = openTo(caller);
 
         // the owner chose these people, so their identity is always shown to the owner
         return links.stream()
@@ -280,7 +288,7 @@ public class SocialService {
     public void addViewer(Caller caller, String username) {
         UserInfo target = requireUser(username);
         requireNotSelf(caller, target);
-        if (!repo.isListed(target.studentId())) {
+        if (!openTo(caller).contains(target.studentId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "User is Unlisted");
         }
         repo.addViewer(caller.studentId(), target.studentId());
@@ -307,7 +315,7 @@ public class SocialService {
             return List.of();
         }
         Map<String, UserInfo> info = users.byIds(ids(links));
-        Set<String> listed = repo.listedIds();
+        Set<String> listed = openTo(caller);
         Map<String, List<SharedTask>> byOwner = visibleTo(caller, tasks.tasks(ids(links), TRUSTED_AND_OPEN)).stream()
                 .collect(Collectors.groupingBy(TaskInfo::studentId,
                         Collectors.mapping(SharedTask::of, Collectors.toList())));
@@ -338,7 +346,7 @@ public class SocialService {
         Map<String, UserInfo> info = users.byIds(Stream.concat(
                 incoming.stream().map(AccessRequest::requesterId),
                 outgoing.stream().map(AccessRequest::ownerId)).collect(Collectors.toSet()));
-        Set<String> listed = repo.listedIds();
+        Set<String> listed = openTo(caller);
 
         // requesters reveal themselves by asking, so their identity is shown to the owner
         List<RequestEntry> in = incoming.stream()
@@ -360,6 +368,9 @@ public class SocialService {
         }
         if (repo.isViewer(target.studentId(), caller.studentId())) {
             throw new ApiException(HttpStatus.CONFLICT, "You are already one of their task viewers");
+        }
+        if (repo.stopsRequests(target.studentId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This person is not taking requests");
         }
         return repo.createRequest(caller.studentId(), target.studentId())
                 .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "Request already sent"));
@@ -585,7 +596,7 @@ public class SocialService {
     // My task viewers with their names, my groups, and who is in Default
     private Viewers viewersWithGroups(Caller caller) {
         Set<String> viewerIds = ids(repo.viewersOf(caller.studentId()));
-        return new Viewers(viewerIds, repo.groupsOf(caller.studentId()), users.byIds(viewerIds), repo.listedIds());
+        return new Viewers(viewerIds, repo.groupsOf(caller.studentId()), users.byIds(viewerIds), openTo(caller));
     }
 
     private record Viewers(Set<String> viewerIds, List<Group> groups, Map<String, UserInfo> info, Set<String> listed) {
@@ -666,21 +677,29 @@ public class SocialService {
         return links.stream().map(Link::studentId).collect(Collectors.toCollection(HashSet::new));
     }
 
+    // Accounts the caller may see: Listed people, plus Unlisted people who put the caller on their list
+    private Set<String> openTo(Caller caller) {
+        Set<String> open = repo.listedIds();
+        open.addAll(ids(repo.ownersWhoAdded(caller.studentId())));
+        return open;
+    }
+
     private Relations relations(Caller caller) {
         String me = caller.studentId();
         return new Relations(
                 ids(repo.viewersOf(me)),
                 ids(repo.ownersWhoAdded(me)),
                 repo.requestsFrom(me).stream().collect(Collectors.toMap(AccessRequest::ownerId, AccessRequest::id)),
-                repo.requestsTo(me).stream().collect(Collectors.toMap(AccessRequest::requesterId, AccessRequest::id)));
+                repo.requestsTo(me).stream().collect(Collectors.toMap(AccessRequest::requesterId, AccessRequest::id)),
+                repo.requestsStoppedIds());
     }
 
     private record Relations(Set<String> myViewers, Set<String> addedMe,
-            Map<String, Integer> sent, Map<String, Integer> received) {
+            Map<String, Integer> sent, Map<String, Integer> received, Set<String> stopped) {
 
         Relationship with(String other) {
             return new Relationship(myViewers.contains(other), addedMe.contains(other),
-                    sent.get(other), received.get(other));
+                    sent.get(other), received.get(other), !stopped.contains(other));
         }
     }
 }

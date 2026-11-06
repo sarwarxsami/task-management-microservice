@@ -473,10 +473,50 @@ button.danger {
   overflow-wrap: anywhere;
 }
 
+.task-fold {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.task-fold > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.task-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* the arrow sits on the right, like every other dropdown */
+.task-fold > summary::after {
+  content: "\25B8";
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.task-fold[open] > summary::after {
+  content: "\25BE";
+}
+
+.task-fold > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.task-more {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
 .task-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  flex-shrink: 0;
 }
 
 .empty {
@@ -667,9 +707,13 @@ h3 {
   border-color: var(--accent);
 }
 
+/* no padding: the general input padding squashes radios and checkboxes into dots */
 .option input {
-  width: auto;
-  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  flex-shrink: 0;
+  margin-top: 2px;
   accent-color: var(--accent);
 }
 
@@ -1410,11 +1454,6 @@ main.loading {
 @media (max-width: 520px) {
   .task {
     flex-wrap: wrap;
-  }
-
-  .task-actions {
-    width: 100%;
-    justify-content: flex-end;
   }
 
   .tagline {

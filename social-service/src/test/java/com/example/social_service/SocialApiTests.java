@@ -357,14 +357,19 @@ class SocialApiTests {
         jdbc.update("INSERT INTO task_viewers (owner_id, viewer_id) VALUES ('s-carol', 's-bob')");
         setListed(token("s-alice", "user"), true);
 
+        // bob is on carol's list, so she is not Unlisted for him
         mvc.perform(get(BASE + "/view-tasks").header("Authorization", bob))
                 .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].owner").value(nullValue()))
+                .andExpect(jsonPath("$[0].owner.username").value("carol"))
                 .andExpect(jsonPath("$[0].tasks[*].title", containsInAnyOrder("carol trusted", "carol open")));
 
         mvc.perform(get(BASE + "/open-tasks").header("Authorization", bob))
                 .andExpect(jsonPath("$", hasSize(2)))
                 .andExpect(jsonPath("$[?(@.task.title == 'alice open')].owner.username").value("alice"))
+                .andExpect(jsonPath("$[?(@.task.title == 'carol open')].owner.username").value("carol"));
+
+        // anyone else only sees "User is Unlisted"
+        mvc.perform(get(BASE + "/open-tasks").header("Authorization", token("s-alice", "user")))
                 .andExpect(jsonPath("$[?(@.task.title == 'carol open')].owner").value(contains(nullValue())));
 
         // admins do not see who it is either
@@ -696,15 +701,18 @@ class SocialApiTests {
         addViewer(alice, "bob");
         int study = createGroup(alice, "Study");
         addMembers(alice, study, "[\"bob\"]").andExpect(status().isOk());
-        // carol (unlisted) adds bob too: bob sees her only as "User is Unlisted"
+        // carol (unlisted) adds bob too
         jdbc.update("INSERT INTO task_viewers (owner_id, viewer_id) VALUES ('s-carol', 's-bob')");
 
         MvcResult r = mvc.perform(get(BASE + "/view-tasks").header("Authorization", bob))
                 .andExpect(jsonPath("$", hasSize(2))).andReturn();
         String body = r.getResponse().getContentAsString();
         List<Map<String, Object>> entries = JsonPath.read(body, "$");
-        int aliceLink = entries.stream().filter(e -> e.get("owner") != null).map(e -> (Integer) e.get("id")).findFirst().orElseThrow();
-        int carolLink = entries.stream().filter(e -> e.get("owner") == null).map(e -> (Integer) e.get("id")).findFirst().orElseThrow();
+        java.util.function.Function<String, Integer> linkOf = name -> entries.stream()
+                .filter(e -> name.equals(((Map<?, ?>) e.get("owner")).get("username")))
+                .map(e -> (Integer) e.get("id")).findFirst().orElseThrow();
+        int aliceLink = linkOf.apply("alice");
+        int carolLink = linkOf.apply("carol");
 
         // nobody else can use bob's entries
         mvc.perform(delete(BASE + "/view-tasks/" + aliceLink).header("Authorization", carol)).andExpect(status().isNotFound());
@@ -721,7 +729,7 @@ class SocialApiTests {
                 .andExpect(jsonPath("$.relationship.addedMe").value(false))
                 .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice open")));
 
-        // an Unlisted owner's list can be left too, without learning who it is
+        // an Unlisted owner's list can be left too; after that she is Unlisted for him again
         mvc.perform(delete(BASE + "/view-tasks/" + carolLink).header("Authorization", bob)).andExpect(status().isNoContent());
         mvc.perform(get(BASE + "/view-tasks").header("Authorization", bob)).andExpect(jsonPath("$", hasSize(0)));
 
@@ -868,5 +876,80 @@ class SocialApiTests {
                 detail("birthday", "2001-02-30", "open"))) {
             saveDetails(alice, "[" + bad + "]").andExpect(status().isBadRequest());
         }
+    }
+
+    @Test
+    void unlistedUsersAreVisibleToThePeopleOnTheirList() throws Exception {
+        String alice = token("s-alice", "user");
+        String bob = token("s-bob", "user");
+        String carol = token("s-carol", "user");
+        setListed(bob, true);
+        addViewer(alice, "bob");
+        // alice is Unlisted; bob is on her list, carol is not
+
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.person.listed").value(true))
+                .andExpect(jsonPath("$.tasks[*].title", containsInAnyOrder("alice trusted", "alice open")));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("User is Unlisted"));
+
+        mvc.perform(get(BASE + "/discover").header("Authorization", bob))
+                .andExpect(jsonPath("$[*].person.username", contains("alice")));
+        mvc.perform(get(BASE + "/discover").header("Authorization", carol))
+                .andExpect(jsonPath("$[*].person.username", contains("bob")));
+
+        // bob can add her back even though she is Unlisted; carol cannot
+        addViewer(bob, "alice");
+        mvc.perform(post(BASE + "/viewers").header("Authorization", carol)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"alice\"}"))
+                .andExpect(status().isNotFound());
+
+        // removed from her list, he is a stranger again
+        mvc.perform(delete(BASE + "/viewers/bob").header("Authorization", alice)).andExpect(status().isNoContent());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void usersCanStopViewerAccessRequests() throws Exception {
+        String alice = token("s-alice", "user");
+        String bob = token("s-bob", "user");
+        String carol = token("s-carol", "user");
+        setListed(alice, true);
+        int waiting = sendRequest(carol, "alice");
+
+        mvc.perform(get(BASE + "/settings").header("Authorization", alice))
+                .andExpect(jsonPath("$.stopRequests").value(false));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(jsonPath("$.relationship.acceptsRequests").value(true));
+
+        mvc.perform(put(BASE + "/settings").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"stopRequests\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stopRequests").value(true))
+                .andExpect(jsonPath("$.listed").value(true));
+
+        mvc.perform(post(BASE + "/requests").header("Authorization", bob)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"alice\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("This person is not taking requests"));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(jsonPath("$.relationship.acceptsRequests").value(false));
+        mvc.perform(get(BASE + "/discover").header("Authorization", bob))
+                .andExpect(jsonPath("$[0].relationship.acceptsRequests").value(false));
+
+        // a request already waiting can still be answered, and alice can still add people herself
+        mvc.perform(post(BASE + "/requests/" + waiting + "/accept").header("Authorization", alice))
+                .andExpect(status().isNoContent());
+        setListed(bob, true);
+        addViewer(alice, "bob");
+
+        // setting one option leaves the other alone
+        setListed(alice, false);
+        mvc.perform(get(BASE + "/settings").header("Authorization", alice))
+                .andExpect(jsonPath("$.stopRequests").value(true));
+        mvc.perform(put(BASE + "/settings").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
     }
 }

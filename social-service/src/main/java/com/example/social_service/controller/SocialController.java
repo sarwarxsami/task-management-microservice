@@ -53,15 +53,15 @@ public class SocialController {
 
     @GetMapping("/settings")
     public Settings getSettings(@AuthenticationPrincipal Jwt jwt) {
-        return new Settings(service.isListed(caller(jwt)));
+        return service.settings(caller(jwt));
     }
 
     @PutMapping("/settings")
     public Settings updateSettings(@AuthenticationPrincipal Jwt jwt, @RequestBody Settings body) {
-        if (body.listed() == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "listed is required");
+        if (body.listed() == null && body.stopRequests() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "listed or stopRequests is required");
         }
-        return new Settings(service.setListed(caller(jwt), body.listed()));
+        return service.updateSettings(caller(jwt), body);
     }
 
     @GetMapping("/profile-details")

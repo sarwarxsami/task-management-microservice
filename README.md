@@ -141,7 +141,7 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 | Open | every logged-in user |
 
 - **Listed** users appear in **Discover**; anyone can open their **Space** (username, name and the tasks they may see, read-only).
-- **Unlisted** users (the default) are hidden from Discover, their Space opens only for themselves, and they cannot receive requests. Their Open tasks still appear in the Open Tasks feed, and they appear in **View Tasks**, as **"User is Unlisted"**.
+- **Unlisted** users (the default) are hidden from Discover, their Space opens only for themselves, and they cannot receive requests. The people on an Unlisted user's own Your Task Viewers list are the exception: for them the account works as if it were Listed. Their Open tasks still appear in the Open Tasks feed, and they appear in **View Tasks**, as **"User is Unlisted"**.
 - Adding someone to Your Task Viewers is one-way. A **Viewer Access Request** asks someone to add you to theirs.
 - A Hand-picked or Group task never falls back to All Trusted: if every picked person leaves Your Task Viewers, or every chosen group is deleted, it is visible to nobody else. A new Hand-picked or Group task is saved as Only Me until its audience is stored, so it is never briefly visible to all trusted viewers.
 - Removing someone from Your Task Viewers also removes them from all of your groups.
@@ -150,7 +150,7 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/service/social-service/health` | Health check (public) |
-| GET / PUT | `/service/social-service/settings` | `{ "listed": true }` — Listed / Unlisted |
+| GET / PUT | `/service/social-service/settings` | `{ "listed": true, "stopRequests": false }` — Listed / Unlisted, and whether others can send Viewer Access Requests; a field left out keeps its value |
 | GET / PUT | `/service/social-service/profile-details` | Your profile details; PUT `{ "details": [{ "field", "title", "value", "visibility" }] }` replaces them all |
 | GET | `/service/social-service/discover` | Listed users and your relationship with each |
 | GET | `/service/social-service/open-tasks` | Open tasks of other users (owner hidden if Unlisted) |

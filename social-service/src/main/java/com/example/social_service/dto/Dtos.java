@@ -11,7 +11,8 @@ public final class Dtos {
     private Dtos() {
     }
 
-    // Public identity of a user; student IDs are never shared
+    // Public identity of a user; student IDs are never shared.
+    // listed is from the viewer's side: true also for an Unlisted user who added the viewer
     public record Person(String username, String name, boolean listed) {
     }
 
@@ -30,7 +31,8 @@ public final class Dtos {
             boolean isMyTaskViewer,
             boolean addedMe,
             Integer requestSentId,
-            Integer requestReceivedId) {
+            Integer requestReceivedId,
+            boolean acceptsRequests) {
     }
 
     public record DiscoverEntry(Person person, Relationship relationship) {
@@ -98,7 +100,8 @@ public final class Dtos {
     public record WhoCanSee(String mode, List<GroupView> groups, List<WhoPerson> people, boolean includeDefault) {
     }
 
-    public record Settings(Boolean listed) {
+    // on update, a field left out keeps its value
+    public record Settings(Boolean listed, Boolean stopRequests) {
     }
 
     public record UsernameBody(String username) {
