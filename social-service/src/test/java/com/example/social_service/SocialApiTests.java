@@ -837,4 +837,36 @@ class SocialApiTests {
         // nothing was saved by the failed attempts
         mvc.perform(get(BASE + "/profile-details").header("Authorization", alice)).andExpect(jsonPath("$", hasSize(0)));
     }
+
+    @Test
+    void birthdaysCanUseBanglaAndHijriCalendars() throws Exception {
+        String alice = token("s-alice", "user");
+        String carol = token("s-carol", "user");
+        setListed(alice, true);
+
+        saveDetails(alice, "[" + detail("birthday_calendar", "bangla", "only_me") + "," + detail("birthday", "1408-01-31", "open") + "]")
+                .andExpect(status().isOk());
+        // the calendar goes with the birthday, the year stays hidden
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.details[*].field", containsInAnyOrder("birthday", "birthday_calendar")))
+                .andExpect(jsonPath("$.details[?(@.field == 'birthday')].value", contains("01-31")))
+                .andExpect(jsonPath("$.details[?(@.field == 'birthday_calendar')].value", contains("bangla")));
+
+        // a hidden birthday hides its calendar too
+        saveDetails(alice, "[" + detail("birthday_calendar", "hijri", "only_me") + "," + detail("birthday", "1422-09-30", "only_me") + "]")
+                .andExpect(status().isOk());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.details", hasSize(0)));
+
+        for (String bad : List.of(
+                detail("birthday_calendar", "bangla", "only_me") + "," + detail("birthday", "1408-07-31", "open"),
+                detail("birthday_calendar", "bangla", "only_me") + "," + detail("birthday", "2001-03-14", "open"),
+                detail("birthday_calendar", "bangla", "only_me") + "," + detail("birthday", "1408-13-01", "open"),
+                detail("birthday_calendar", "hijri", "only_me") + "," + detail("birthday", "1422-09-31", "open"),
+                detail("birthday_calendar", "hijri", "only_me") + "," + detail("birthday", "1600-01-01", "open"),
+                detail("birthday_calendar", "mayan", "only_me") + "," + detail("birthday", "2001-03-14", "open"),
+                detail("birthday", "2001-02-30", "open"))) {
+            saveDetails(alice, "[" + bad + "]").andExpect(status().isBadRequest());
+        }
+    }
 }

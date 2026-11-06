@@ -74,9 +74,10 @@ public class SocialService {
     private static final String CUSTOM = "custom";
     private static final String BIRTHDAY = "birthday";
     private static final String BIRTHDAY_DISPLAY = "birthday_display";
+    private static final String BIRTHDAY_CALENDAR = "birthday_calendar";
     private static final Set<String> DETAIL_FIELDS = Set.of(
             "nickname", "bio", "pronouns", "mother_tongue", "languages", "religion", "motto",
-            BIRTHDAY, BIRTHDAY_DISPLAY, "zodiac",
+            BIRTHDAY, BIRTHDAY_DISPLAY, BIRTHDAY_CALENDAR, "zodiac",
             "school", "college", "university", "department", "batch", "student_status", "degree",
             "occupation", "company", "job_title", "skills",
             "hometown", "current_city", "country",
@@ -84,6 +85,7 @@ public class SocialService {
             "life_goal", "working_on", "learning");
     private static final Map<String, Set<String>> DETAIL_CHOICES = Map.of(
             BIRTHDAY_DISPLAY, Set.of("full", "day_month"),
+            BIRTHDAY_CALENDAR, Set.of("gregorian", "bangla", "hijri"),
             "student_status", Set.of("studying", "graduated"),
             "zodiac", Set.of("aries", "taurus", "gemini", "cancer", "leo", "virgo", "libra", "scorpio",
                     "sagittarius", "capricorn", "aquarius", "pisces"));
@@ -174,6 +176,8 @@ public class SocialService {
         List<ProfileDetail> clean = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         int custom = 0;
+        String calendar = details.stream().filter(d -> BIRTHDAY_CALENDAR.equals(d.field())).map(ProfileDetail::value)
+                .findFirst().orElse("gregorian");
         for (ProfileDetail d : details) {
             String value = d.value() == null ? "" : d.value().trim();
             String title = d.title() == null ? "" : d.title().trim();
@@ -204,7 +208,7 @@ public class SocialService {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid choice for " + d.field());
             }
             if (BIRTHDAY.equals(d.field())) {
-                requireBirthday(value);
+                requireBirthday(value, calendar);
             }
             clean.add(new ProfileDetail(d.field(), null, value, d.visibility()));
         }
@@ -212,14 +216,35 @@ public class SocialService {
         return repo.detailsOf(caller.studentId());
     }
 
-    private static void requireBirthday(String value) {
-        try {
-            LocalDate date = LocalDate.parse(value);
-            if (date.isAfter(LocalDate.now()) || date.getYear() < 1900) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Birthday must be a past date");
-            }
-        } catch (DateTimeException e) {
+    // Dates are kept as entered, as YYYY-MM-DD in the chosen calendar, so nothing is lost converting between calendars
+    private static void requireBirthday(String value, String calendar) {
+        if (!value.matches("\\d{4}-\\d{2}-\\d{2}")) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Birthday must be a date");
+        }
+        int year = Integer.parseInt(value.substring(0, 4));
+        int month = Integer.parseInt(value.substring(5, 7));
+        int day = Integer.parseInt(value.substring(8));
+        int thisYear = LocalDate.now().getYear();
+
+        if ("bangla".equals(calendar)) {
+            // Bangla year = Gregorian year - 593 or 594; Boishakh to Ashwin have 31 days, the others up to 30
+            requireDate(year >= 1306 && year <= thisYear - 593 && month >= 1 && month <= 12 && day >= 1 && day <= (month <= 6 ? 31 : 30));
+        } else if ("hijri".equals(calendar)) {
+            // about 33 Hijri years pass in 32 Gregorian ones; months have 29 or 30 days
+            requireDate(year >= 1317 && year <= (thisYear - 622) * 33 / 32 + 1 && month >= 1 && month <= 12 && day >= 1 && day <= 30);
+        } else {
+            try {
+                LocalDate date = LocalDate.parse(value);
+                requireDate(!date.isAfter(LocalDate.now()) && date.getYear() >= 1900);
+            } catch (DateTimeException e) {
+                requireDate(false);
+            }
+        }
+    }
+
+    private static void requireDate(boolean valid) {
+        if (!valid) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Birthday must be a real past date in the chosen calendar");
         }
     }
 
@@ -227,8 +252,11 @@ public class SocialService {
     private List<ProfileDetail> sharedDetails(String ownerId, List<String> visibilities) {
         List<ProfileDetail> all = repo.detailsOf(ownerId);
         boolean fullBirthday = all.stream().anyMatch(d -> BIRTHDAY_DISPLAY.equals(d.field()) && "full".equals(d.value()));
+        boolean birthdayShown = all.stream().anyMatch(d -> BIRTHDAY.equals(d.field()) && visibilities.contains(d.visibility()));
         return all.stream()
-                .filter(d -> visibilities.contains(d.visibility()) && !BIRTHDAY_DISPLAY.equals(d.field()))
+                .filter(d -> !BIRTHDAY_DISPLAY.equals(d.field()))
+                // the calendar follows the birthday, it has no visibility of its own
+                .filter(d -> BIRTHDAY_CALENDAR.equals(d.field()) ? birthdayShown : visibilities.contains(d.visibility()))
                 .map(d -> new ProfileDetail(d.field(), d.title(),
                         BIRTHDAY.equals(d.field()) && !fullBirthday ? d.value().substring(5) : d.value(), null))
                 .toList();

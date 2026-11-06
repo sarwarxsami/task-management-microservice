@@ -267,6 +267,37 @@ $("form-login").addEventListener("submit", (e) => {
   });
 });
 
+// Two pop-ups for a brand-new account: it starts Unlisted, and sharing needs people on the list.
+// They follow registering directly, so existing accounts never see them.
+function showWelcome() {
+  const dialog = $("welcome");
+  const step = (number, title, text, ...actions) => {
+    $("welcome-step").textContent = `${number} of 2`;
+    $("welcome-title").textContent = title;
+    $("welcome-text").textContent = text;
+    $("welcome-actions").replaceChildren(...actions);
+    actions[0].focus();
+  };
+
+  const trusted = (listed) => step(2, "Add people you trust",
+    `${listed ? "Your account is now Listed. " : ""}Your tasks are Only Me until you choose otherwise. To share them, add people to Your Task Viewers on the Viewers page, then set a task to Trusted. Only Listed people can be added.`,
+    button("Go to Viewers", "", async () => {
+      dialog.close();
+      await openView("viewers");
+      $("viewers-card").open = true;
+    }),
+    button("Later", "ghost", async () => dialog.close()));
+
+  dialog.showModal();
+  step(1, "Your account is Unlisted",
+    "Right now nobody can find you: you are hidden from Discover, your Space opens only for you, and nobody can send you a request or add you to their Task Viewers. To show your account to others, make it Listed. You can change this anytime in Account.",
+    button("Make my account Listed", "", async () => {
+      await api(`${SOCIAL}/settings`, { method: "PUT", body: { listed: true } });
+      trusted(true);
+    }),
+    button("Keep it Unlisted", "ghost", async () => trusted(false)));
+}
+
 // Forgot password: an emailed code sets a new one. The answer never says whether the address has an account.
 let resetEmail = null;
 
@@ -348,7 +379,7 @@ $("form-verify").addEventListener("submit", (e) => {
     $("form-login").hidden = false;
     document.querySelectorAll("[data-auth-tab]").forEach((t) => t.classList.toggle("active", t.dataset.authTab === "login"));
     await startSession();
-    toast(`Account created. Welcome, ${user.name}`);
+    showWelcome();
   });
 });
 
@@ -1192,18 +1223,38 @@ $("btn-space-back").addEventListener("click", () => openView(state.backView || "
 const ZODIAC = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
   .map((name) => [name.toLowerCase(), name]);
 
+// Birthdays are kept as entered in the chosen calendar, never converted
+const CALENDARS = {
+  gregorian: {
+    label: "Gregorian",
+    example: "2001",
+    months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+  },
+  bangla: {
+    label: "Bangla",
+    example: "1408",
+    months: ["Boishakh", "Joishtho", "Asharh", "Srabon", "Bhadro", "Ashwin", "Kartik", "Ogrohayon", "Poush", "Magh", "Falgun", "Choitro"],
+  },
+  hijri: {
+    label: "Hijri",
+    example: "1422",
+    months: ["Muharram", "Safar", "Rabi al-Awwal", "Rabi al-Thani", "Jumada al-Awwal", "Jumada al-Thani", "Rajab", "Shaban", "Ramadan", "Shawwal", "Dhul Qadah", "Dhul Hijjah"],
+  },
+};
+
 const DETAIL_GROUPS = [
   ["About", [
     { key: "nickname", label: "Nickname" },
-    { key: "bio", label: "Short bio", type: "textarea" },
+    { key: "bio", label: "Short bio", type: "textarea", lead: true },
     { key: "pronouns", label: "Pronouns" },
     { key: "mother_tongue", label: "Mother tongue" },
     { key: "languages", label: "Other languages" },
     { key: "religion", label: "Religion" },
-    { key: "motto", label: "Motto / favorite quote", type: "textarea" },
+    { key: "motto", label: "Motto / favorite quote", type: "textarea", lead: true },
   ]],
   ["Birthday", [
-    { key: "birthday", label: "Date of birth", type: "date" },
+    { key: "birthday_calendar", label: "Calendar", follows: true, choices: Object.entries(CALENDARS).map(([v, c]) => [v, c.label]) },
+    { key: "birthday", label: "Date of birth", type: "birthday" },
     { key: "birthday_display", label: "Show as", follows: true, choices: [["day_month", "Day and month only"], ["full", "Full date"]] },
     { key: "zodiac", label: "Zodiac sign", choices: ZODIAC },
   ]],
@@ -1254,7 +1305,59 @@ function visibilitySelect(value = "only_me") {
   return select;
 }
 
+// Day, month and year fields feeding one hidden YYYY-MM-DD value
+function birthdayRow(field, saved) {
+  const row = el("div", "detail-row");
+  row.dataset.field = field.key;
+  const [year = "", month = "", day = ""] = saved?.value.split("-") ?? [];
+
+  const value = el("input", "detail-value");
+  value.type = "hidden";
+  const days = el("select", "birthday-day");
+  days.setAttribute("aria-label", "Day");
+  days.append(new Option("Day", ""), ...Array.from({ length: 31 }, (_, i) => new Option(i + 1, i + 1)));
+  days.value = day ? Number(day) : "";
+  const months = el("select", "birthday-month");
+  months.setAttribute("aria-label", "Month");
+  months.dataset.saved = month ? Number(month) : "";
+  const years = el("input", "birthday-year");
+  years.type = "number";
+  years.setAttribute("aria-label", "Year");
+  years.value = year;
+
+  const sync = () => {
+    const done = days.value && months.value && years.value;
+    value.value = done ? `${years.value.padStart(4, "0")}-${months.value.padStart(2, "0")}-${days.value.padStart(2, "0")}` : "";
+  };
+  row.addEventListener("input", sync);
+
+  const parts = el("div", "birthday-parts");
+  parts.append(days, months, years);
+  const box = el("div", "birthday-field");
+  box.append(el("span", "detail-label", field.label), parts, value);
+  row.append(box, visibilitySelect(saved?.visibility));
+  return row;
+}
+
+// The month names and example year follow the chosen calendar
+function wireBirthday() {
+  const calendar = document.querySelector('.detail-row[data-field="birthday_calendar"] .detail-value');
+  const row = document.querySelector('.detail-row[data-field="birthday"]');
+  const months = row.querySelector(".birthday-month");
+  const fill = () => {
+    const keep = months.value || months.dataset.saved;
+    const { months: names, example } = CALENDARS[calendar.value];
+    months.replaceChildren(new Option("Month", ""), ...names.map((name, i) => new Option(name, i + 1)));
+    months.value = keep;
+    row.querySelector(".birthday-year").placeholder = `Year, like ${example}`;
+    row.dispatchEvent(new Event("input"));
+  };
+  calendar.addEventListener("change", fill);
+  fill();
+}
+
 function detailRow(field, saved) {
+  if (field.type === "birthday") return birthdayRow(field, saved);
   const row = el("div", "detail-row");
   row.dataset.field = field.key;
   let input;
@@ -1270,7 +1373,6 @@ function detailRow(field, saved) {
     input = el("input");
     input.type = field.type || "text";
     input.maxLength = 200;
-    if (field.type === "date") input.max = todayISO();
   }
   input.className = "detail-value";
   input.value = saved?.value ?? "";
@@ -1347,13 +1449,16 @@ function renderDetailsForm(details) {
   groups.push(detailDropdown("Anything else", custom.length ? `${custom.length} filled` : "", body));
 
   $("details-groups").replaceChildren(...groups);
-  const total = details.filter((d) => d.field !== "birthday_display").length;
+  wireBirthday();
+  const total = details.filter((d) => !["birthday_display", "birthday_calendar"].includes(d.field)).length;
   $("details-count").textContent = total ? `${total} filled` : "";
 }
 
 $("form-details").addEventListener("submit", (e) => {
   e.preventDefault();
   const form = e.currentTarget;
+  const birthdayParts = [...form.querySelectorAll(".birthday-day, .birthday-month, .birthday-year")].filter((p) => p.value).length;
+  if (birthdayParts > 0 && birthdayParts < 3) return toast("Fill in the day, month and year of your birthday, or leave all three empty", "err");
   withBusy(form, async () => {
     const details = [...form.querySelectorAll(".detail-row")].map((row) => ({
       field: row.dataset.field,
@@ -1361,9 +1466,9 @@ $("form-details").addEventListener("submit", (e) => {
       value: row.querySelector(".detail-value").value,
       visibility: row.querySelector(".detail-visibility")?.value || "only_me",
     }));
-    // how to show the birthday means nothing without one
+    // the calendar and how to show the birthday mean nothing without one
     const birthday = details.find((d) => d.field === "birthday");
-    const body = details.filter((d) => d.field !== "birthday_display" || birthday.value);
+    const body = details.filter((d) => !["birthday_display", "birthday_calendar"].includes(d.field) || birthday.value);
     const opened = [...form.querySelectorAll("details[open] > summary h3")].map((h) => h.textContent);
     renderDetailsForm(await api(`${SOCIAL}/profile-details`, { method: "PUT", body: { details: body } }));
     form.querySelectorAll("details").forEach((d) => {
@@ -1373,41 +1478,51 @@ $("form-details").addEventListener("submit", (e) => {
   });
 });
 
-function detailText(field, value) {
-  if (field.key === "birthday") {
-    const full = value.length === 10;
-    const [y, m, d] = (full ? value : `2000-${value}`).split("-").map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString(undefined, full
-      ? { day: "numeric", month: "long", year: "numeric" }
-      : { day: "numeric", month: "long" });
-  }
+function birthdayText(value, calendar = "gregorian") {
+  const parts = value.split("-").map(Number);
+  const [year, month, day] = parts.length === 3 ? parts : [null, ...parts];
+  const { label, months } = CALENDARS[calendar];
+  const date = [day, months[month - 1], year].filter(Boolean).join(" ");
+  return calendar === "gregorian" ? date : `${date} (${label})`;
+}
+
+function detailText(field, value, details) {
+  if (field.key === "birthday") return birthdayText(value, details.find((d) => d.field === "birthday_calendar")?.value);
   return field.choices?.find(([v]) => v === value)?.[1] ?? value;
 }
 
-// The About section of a Space: one dropdown per group that has something to show
+// The About section of a Space: bio and motto first, then a plain list under a heading per group
 function renderSpaceDetails(details) {
   const byField = new Map(details.filter((d) => d.field !== "custom").map((d) => [d.field, d]));
-  const line = (label, text) => {
-    const row = el("div", "detail-line");
-    row.append(el("span", "muted", label), el("span", "detail-text", text));
-    return row;
+  const list = (title, rows) => {
+    const box = el("section", "about-group");
+    const dl = el("dl");
+    for (const [label, text] of rows) {
+      const row = el("div", "about-row");
+      row.append(el("dt", null, label), el("dd", null, text));
+      dl.append(row);
+    }
+    box.append(el("h3", null, title), dl);
+    return box;
   };
+
+  const lead = [];
+  if (byField.has("bio")) lead.push(el("p", "about-bio", byField.get("bio").value));
+  if (byField.has("motto")) lead.push(el("blockquote", "about-motto", byField.get("motto").value));
+
   const groups = [];
   for (const [title, fields] of DETAIL_GROUPS) {
-    const shown = fields.filter((f) => !f.follows && byField.has(f.key));
+    const shown = fields.filter((f) => !f.follows && !f.lead && byField.has(f.key));
     if (shown.length === 0) continue;
-    const body = el("div", "fold-body");
-    body.append(...shown.map((f) => line(f.label, detailText(f, byField.get(f.key).value))));
-    groups.push(detailDropdown(title, plural(shown.length, "item"), body));
+    groups.push(list(title === "About" ? "Personal" : title, shown.map((f) => [f.label, detailText(f, byField.get(f.key).value, details)])));
   }
   const custom = details.filter((d) => d.field === "custom");
-  if (custom.length) {
-    const body = el("div", "fold-body");
-    body.append(...custom.map((d) => line(d.title, d.value)));
-    groups.push(detailDropdown("Anything else", plural(custom.length, "item"), body));
-  }
-  $("space-details").replaceChildren(...groups);
-  $("space-about").hidden = groups.length === 0;
+  if (custom.length) groups.push(list("More", custom.map((d) => [d.title, d.value])));
+
+  const grid = el("div", "about-groups");
+  grid.append(...groups);
+  $("space-details").replaceChildren(...lead, ...(groups.length ? [grid] : []));
+  $("space-about").hidden = lead.length + groups.length === 0;
 }
 
 // ---------- Viewers ----------
