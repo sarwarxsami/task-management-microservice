@@ -36,7 +36,15 @@ public final class Dtos {
     public record DiscoverEntry(Person person, Relationship relationship) {
     }
 
-    public record Space(Person person, boolean self, Relationship relationship, List<SharedTask> tasks) {
+    // One profile detail. visibility is only filled in for the owner; title only for field "custom".
+    // Dates are "YYYY-MM-DD", or "MM-DD" when the owner hides the birth year.
+    public record ProfileDetail(String field, String title, String value, String visibility) {
+    }
+
+    public record ProfileDetailsBody(List<ProfileDetail> details) {
+    }
+
+    public record Space(Person person, boolean self, Relationship relationship, List<ProfileDetail> details, List<SharedTask> tasks) {
     }
 
     // owner == null means "User is Unlisted"

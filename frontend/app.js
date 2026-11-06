@@ -186,7 +186,7 @@ const LOADERS = {
   admin: async () => { await loadUsers(); renderUsers(); },
   discover: () => loadDiscover(),
   viewers: () => loadViewers(),
-  account: () => loadSettings(),
+  account: () => Promise.all([loadSettings(), loadDetails()]),
 };
 
 // Shows a view right away (with what was loaded last time) and refreshes its data in the background
@@ -1159,7 +1159,7 @@ async function openSpace(username) {
 }
 
 function renderSpace() {
-  const { person, self, relationship, tasks } = state.space;
+  const { person, self, relationship, details, tasks } = state.space;
 
   $("space-name").textContent = person.name;
   $("space-meta").textContent = `@${person.username} · ${person.listed ? "Listed" : "Unlisted"}`;
@@ -1177,12 +1177,238 @@ function renderSpace() {
     }));
   }
 
+  renderSpaceDetails(details);
+
   $("space-tasks-title").textContent = self ? "Your tasks" : `${person.name}'s tasks`;
   $("space-tasks").replaceChildren(...tasks.map((t) => renderSharedTask(t)));
   $("space-empty").hidden = tasks.length > 0;
 }
 
 $("btn-space-back").addEventListener("click", () => openView(state.backView || "discover"));
+
+// ---------- profile details ----------
+// Text fields unless a type is given. follows: no visibility of its own, it only changes how another field is shown.
+
+const ZODIAC = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
+  .map((name) => [name.toLowerCase(), name]);
+
+const DETAIL_GROUPS = [
+  ["About", [
+    { key: "nickname", label: "Nickname" },
+    { key: "bio", label: "Short bio", type: "textarea" },
+    { key: "pronouns", label: "Pronouns" },
+    { key: "mother_tongue", label: "Mother tongue" },
+    { key: "languages", label: "Other languages" },
+    { key: "religion", label: "Religion" },
+    { key: "motto", label: "Motto / favorite quote", type: "textarea" },
+  ]],
+  ["Birthday", [
+    { key: "birthday", label: "Date of birth", type: "date" },
+    { key: "birthday_display", label: "Show as", follows: true, choices: [["day_month", "Day and month only"], ["full", "Full date"]] },
+    { key: "zodiac", label: "Zodiac sign", choices: ZODIAC },
+  ]],
+  ["Education", [
+    { key: "school", label: "School" },
+    { key: "college", label: "College" },
+    { key: "university", label: "University" },
+    { key: "department", label: "Department / Subject" },
+    { key: "batch", label: "Batch / Session" },
+    { key: "student_status", label: "Student status", choices: [["studying", "Studying"], ["graduated", "Graduated"]] },
+    { key: "degree", label: "Degree" },
+  ]],
+  ["Work", [
+    { key: "occupation", label: "Occupation" },
+    { key: "company", label: "Company / Organization" },
+    { key: "job_title", label: "Job title" },
+    { key: "skills", label: "Skills" },
+  ]],
+  ["Places", [
+    { key: "hometown", label: "Hometown" },
+    { key: "current_city", label: "Current city" },
+    { key: "country", label: "Country" },
+  ]],
+  ["Interests", [
+    { key: "hobbies", label: "Hobbies" },
+    { key: "books", label: "Favorite books" },
+    { key: "movies", label: "Favorite movies" },
+    { key: "tv_shows", label: "Favorite TV shows" },
+    { key: "music", label: "Favorite music" },
+    { key: "games", label: "Favorite games" },
+    { key: "sports", label: "Favorite sports" },
+    { key: "food", label: "Favorite food" },
+  ]],
+  ["Goals", [
+    { key: "life_goal", label: "Life goal" },
+    { key: "working_on", label: "Currently working on" },
+    { key: "learning", label: "Currently learning" },
+  ]],
+];
+
+const MAX_CUSTOM_DETAILS = 20;
+
+function visibilitySelect(value = "only_me") {
+  const select = el("select", "detail-visibility");
+  select.setAttribute("aria-label", "Who can see this");
+  select.append(...Object.entries(VISIBILITY_LABEL).map(([v, label]) => new Option(label, v)));
+  select.value = value;
+  return select;
+}
+
+function detailRow(field, saved) {
+  const row = el("div", "detail-row");
+  row.dataset.field = field.key;
+  let input;
+  if (field.type === "textarea") {
+    input = el("textarea");
+    input.rows = 2;
+    input.maxLength = 1000;
+  } else if (field.choices) {
+    input = el("select");
+    if (!field.follows) input.append(new Option("Not set", ""));
+    input.append(...field.choices.map(([v, label]) => new Option(label, v)));
+  } else {
+    input = el("input");
+    input.type = field.type || "text";
+    input.maxLength = 200;
+    if (field.type === "date") input.max = todayISO();
+  }
+  input.className = "detail-value";
+  input.value = saved?.value ?? "";
+  if (field.follows && !saved) input.selectedIndex = 0;
+
+  const label = el("label", null, field.label);
+  label.append(input);
+  row.append(label);
+  if (!field.follows) row.append(visibilitySelect(saved?.visibility));
+  return row;
+}
+
+function customRow(saved) {
+  const row = el("div", "detail-row custom");
+  row.dataset.field = "custom";
+  const title = el("input", "detail-title");
+  title.maxLength = 60;
+  title.placeholder = "Title, like Favorite teacher";
+  title.setAttribute("aria-label", "Title");
+  title.value = saved?.title ?? "";
+  const value = el("textarea", "detail-value");
+  value.rows = 2;
+  value.maxLength = 1000;
+  value.placeholder = "Anything you like";
+  value.setAttribute("aria-label", "Text");
+  value.value = saved?.value ?? "";
+  const remove = el("button", "ghost small danger-text", "Remove");
+  remove.type = "button";
+  remove.addEventListener("click", () => row.remove());
+  const foot = el("div", "row-actions start");
+  foot.append(visibilitySelect(saved?.visibility), remove);
+  row.append(title, value, foot);
+  return row;
+}
+
+function detailDropdown(title, count, body) {
+  const box = el("details", "fold sub");
+  const head = el("summary");
+  head.append(el("h3", null, title));
+  if (count) head.append(el("span", "hint", count));
+  box.append(head, body);
+  return box;
+}
+
+async function loadDetails() {
+  renderDetailsForm(await api(`${SOCIAL}/profile-details`));
+}
+
+function renderDetailsForm(details) {
+  const byField = new Map(details.filter((d) => d.field !== "custom").map((d) => [d.field, d]));
+  const custom = details.filter((d) => d.field === "custom");
+  const filled = (fields) => fields.filter((f) => !f.follows && byField.has(f.key)).length;
+
+  const groups = DETAIL_GROUPS.map(([title, fields]) => {
+    const body = el("div", "fold-body");
+    body.append(...fields.map((f) => detailRow(f, byField.get(f.key))));
+    return detailDropdown(title, filled(fields) ? `${filled(fields)} filled` : "", body);
+  });
+
+  const list = el("div", "stack tight");
+  list.id = "details-custom";
+  list.append(...custom.map(customRow));
+  const add = el("button", "ghost small", "Add a field");
+  add.type = "button";
+  add.id = "btn-detail-add";
+  add.addEventListener("click", () => {
+    if (list.children.length >= MAX_CUSTOM_DETAILS) return toast(`You can have at most ${MAX_CUSTOM_DETAILS} custom fields`, "err");
+    const row = customRow();
+    list.append(row);
+    row.querySelector(".detail-title").focus();
+  });
+  const body = el("div", "fold-body");
+  body.append(list, add);
+  groups.push(detailDropdown("Anything else", custom.length ? `${custom.length} filled` : "", body));
+
+  $("details-groups").replaceChildren(...groups);
+  const total = details.filter((d) => d.field !== "birthday_display").length;
+  $("details-count").textContent = total ? `${total} filled` : "";
+}
+
+$("form-details").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  withBusy(form, async () => {
+    const details = [...form.querySelectorAll(".detail-row")].map((row) => ({
+      field: row.dataset.field,
+      title: row.querySelector(".detail-title")?.value,
+      value: row.querySelector(".detail-value").value,
+      visibility: row.querySelector(".detail-visibility")?.value || "only_me",
+    }));
+    // how to show the birthday means nothing without one
+    const birthday = details.find((d) => d.field === "birthday");
+    const body = details.filter((d) => d.field !== "birthday_display" || birthday.value);
+    const opened = [...form.querySelectorAll("details[open] > summary h3")].map((h) => h.textContent);
+    renderDetailsForm(await api(`${SOCIAL}/profile-details`, { method: "PUT", body: { details: body } }));
+    form.querySelectorAll("details").forEach((d) => {
+      d.open = opened.includes(d.querySelector("summary h3").textContent);
+    });
+    toast("Details saved");
+  });
+});
+
+function detailText(field, value) {
+  if (field.key === "birthday") {
+    const full = value.length === 10;
+    const [y, m, d] = (full ? value : `2000-${value}`).split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, full
+      ? { day: "numeric", month: "long", year: "numeric" }
+      : { day: "numeric", month: "long" });
+  }
+  return field.choices?.find(([v]) => v === value)?.[1] ?? value;
+}
+
+// The About section of a Space: one dropdown per group that has something to show
+function renderSpaceDetails(details) {
+  const byField = new Map(details.filter((d) => d.field !== "custom").map((d) => [d.field, d]));
+  const line = (label, text) => {
+    const row = el("div", "detail-line");
+    row.append(el("span", "muted", label), el("span", "detail-text", text));
+    return row;
+  };
+  const groups = [];
+  for (const [title, fields] of DETAIL_GROUPS) {
+    const shown = fields.filter((f) => !f.follows && byField.has(f.key));
+    if (shown.length === 0) continue;
+    const body = el("div", "fold-body");
+    body.append(...shown.map((f) => line(f.label, detailText(f, byField.get(f.key).value))));
+    groups.push(detailDropdown(title, plural(shown.length, "item"), body));
+  }
+  const custom = details.filter((d) => d.field === "custom");
+  if (custom.length) {
+    const body = el("div", "fold-body");
+    body.append(...custom.map((d) => line(d.title, d.value)));
+    groups.push(detailDropdown("Anything else", plural(custom.length, "item"), body));
+  }
+  $("space-details").replaceChildren(...groups);
+  $("space-about").hidden = groups.length === 0;
+}
 
 // ---------- Viewers ----------
 
@@ -1542,6 +1768,12 @@ const TOURS = {
       target: "#profile-card",
       title: "Profile",
       text: "Change your name and username. Other people see these, never your email.",
+    },
+    {
+      target: "#details-card > summary",
+      open: ["#details-card"],
+      title: "Profile details",
+      text: "School, birthday, interests and more, all optional, plus your own custom fields. Each one has its own Only Me, Trusted or Open. Others see them on your Space.",
     },
     {
       target: "#email-card",

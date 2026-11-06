@@ -190,3 +190,17 @@ CREATE TABLE IF NOT EXISTS pending_resets (
     expires_at TIMESTAMPTZ NOT NULL,
     sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- social-service: profile description, one row per filled-in field, each with its own visibility.
+-- field 'custom' is a user-made field with its own title and may repeat; every other field appears once
+CREATE TABLE IF NOT EXISTS profile_details (
+    id SERIAL PRIMARY KEY,
+    student_id VARCHAR(50) NOT NULL REFERENCES users(student_id) ON DELETE CASCADE,
+    field VARCHAR(30) NOT NULL,
+    title VARCHAR(60),
+    value TEXT NOT NULL,
+    visibility VARCHAR(10) NOT NULL DEFAULT 'only_me' CHECK (visibility IN ('only_me', 'trusted', 'open'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_details_user ON profile_details (student_id);
+CREATE UNIQUE INDEX IF NOT EXISTS profile_details_one_per_field ON profile_details (student_id, field) WHERE field <> 'custom';

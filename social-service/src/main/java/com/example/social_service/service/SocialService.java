@@ -1,5 +1,8 @@
 package com.example.social_service.service;
 
+import java.time.DateTimeException;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -27,6 +30,7 @@ import com.example.social_service.dto.Dtos.GroupView;
 import com.example.social_service.dto.Dtos.Groups;
 import com.example.social_service.dto.Dtos.OpenTask;
 import com.example.social_service.dto.Dtos.Person;
+import com.example.social_service.dto.Dtos.ProfileDetail;
 import com.example.social_service.dto.Dtos.Relationship;
 import com.example.social_service.dto.Dtos.RequestEntry;
 import com.example.social_service.dto.Dtos.Requests;
@@ -66,6 +70,26 @@ public class SocialService {
     private static final int MAX_AUDIENCE = 200;
     private static final int MAX_GROUPS = 50;
     private static final int MAX_GROUP_NAME = 30;
+
+    private static final String CUSTOM = "custom";
+    private static final String BIRTHDAY = "birthday";
+    private static final String BIRTHDAY_DISPLAY = "birthday_display";
+    private static final Set<String> DETAIL_FIELDS = Set.of(
+            "nickname", "bio", "pronouns", "mother_tongue", "languages", "religion", "motto",
+            BIRTHDAY, BIRTHDAY_DISPLAY, "zodiac",
+            "school", "college", "university", "department", "batch", "student_status", "degree",
+            "occupation", "company", "job_title", "skills",
+            "hometown", "current_city", "country",
+            "hobbies", "books", "movies", "tv_shows", "music", "games", "sports", "food",
+            "life_goal", "working_on", "learning");
+    private static final Map<String, Set<String>> DETAIL_CHOICES = Map.of(
+            BIRTHDAY_DISPLAY, Set.of("full", "day_month"),
+            "student_status", Set.of("studying", "graduated"),
+            "zodiac", Set.of("aries", "taurus", "gemini", "cancer", "leo", "virgo", "libra", "scorpio",
+                    "sagittarius", "capricorn", "aquarius", "pisces"));
+    private static final int MAX_DETAIL = 1000;
+    private static final int MAX_DETAIL_TITLE = 60;
+    private static final int MAX_CUSTOM_DETAILS = 20;
 
     private final SocialRepository repo;
     private final UserClient users;
@@ -131,7 +155,83 @@ public class SocialService {
                 .map(SharedTask::of)
                 .toList();
 
-        return new Space(person(target, listed), self, relationship, shared);
+        List<ProfileDetail> details = self ? repo.detailsOf(target.studentId()) : sharedDetails(target.studentId(), visibilities);
+        return new Space(person(target, listed), self, relationship, details, shared);
+    }
+
+    // ---- Profile details ----
+
+    public List<ProfileDetail> profileDetails(Caller caller) {
+        return repo.detailsOf(caller.studentId());
+    }
+
+    // Replaces all of my details; empty fields are simply not kept
+    @Transactional
+    public List<ProfileDetail> saveProfileDetails(Caller caller, List<ProfileDetail> details) {
+        if (details == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "details is required");
+        }
+        List<ProfileDetail> clean = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        int custom = 0;
+        for (ProfileDetail d : details) {
+            String value = d.value() == null ? "" : d.value().trim();
+            String title = d.title() == null ? "" : d.title().trim();
+            if (value.isEmpty()) {
+                continue;
+            }
+            if (value.length() > MAX_DETAIL) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "A detail can be at most " + MAX_DETAIL + " characters");
+            }
+            if (!ALL.contains(d.visibility())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Visibility must be only_me, trusted or open");
+            }
+            if (CUSTOM.equals(d.field())) {
+                if (title.isEmpty() || title.length() > MAX_DETAIL_TITLE) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "A custom field needs a title of 1-" + MAX_DETAIL_TITLE + " characters");
+                }
+                if (++custom > MAX_CUSTOM_DETAILS) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "You can have at most " + MAX_CUSTOM_DETAILS + " custom fields");
+                }
+                clean.add(new ProfileDetail(CUSTOM, title, value, d.visibility()));
+                continue;
+            }
+            if (!DETAIL_FIELDS.contains(d.field()) || !seen.add(d.field())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Unknown or repeated field");
+            }
+            Set<String> choices = DETAIL_CHOICES.get(d.field());
+            if (choices != null && !choices.contains(value)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid choice for " + d.field());
+            }
+            if (BIRTHDAY.equals(d.field())) {
+                requireBirthday(value);
+            }
+            clean.add(new ProfileDetail(d.field(), null, value, d.visibility()));
+        }
+        repo.replaceDetails(caller.studentId(), clean);
+        return repo.detailsOf(caller.studentId());
+    }
+
+    private static void requireBirthday(String value) {
+        try {
+            LocalDate date = LocalDate.parse(value);
+            if (date.isAfter(LocalDate.now()) || date.getYear() < 1900) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Birthday must be a past date");
+            }
+        } catch (DateTimeException e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Birthday must be a date");
+        }
+    }
+
+    // What someone else may see: only allowed fields, and no birth year unless the owner chose to show it
+    private List<ProfileDetail> sharedDetails(String ownerId, List<String> visibilities) {
+        List<ProfileDetail> all = repo.detailsOf(ownerId);
+        boolean fullBirthday = all.stream().anyMatch(d -> BIRTHDAY_DISPLAY.equals(d.field()) && "full".equals(d.value()));
+        return all.stream()
+                .filter(d -> visibilities.contains(d.visibility()) && !BIRTHDAY_DISPLAY.equals(d.field()))
+                .map(d -> new ProfileDetail(d.field(), d.title(),
+                        BIRTHDAY.equals(d.field()) && !fullBirthday ? d.value().substring(5) : d.value(), null))
+                .toList();
     }
 
     // ---- Your Task Viewers ----

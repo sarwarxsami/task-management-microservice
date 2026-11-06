@@ -996,6 +996,38 @@ dialog:not([open]) {
   margin-right: auto;
 }
 
+/* ---------- profile details ---------- */
+
+.detail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 8px;
+  align-items: end;
+}
+
+.detail-row.custom {
+  grid-template-columns: minmax(0, 1fr);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-row.custom .row-actions select {
+  width: 110px;
+}
+
+.detail-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.detail-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- groups inside Your Task Viewers ---------- */
 
 .stack.tight {

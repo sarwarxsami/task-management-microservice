@@ -16,6 +16,8 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import com.example.social_service.dto.Dtos.ProfileDetail;
+
 @Repository
 public class SocialRepository {
 
@@ -125,6 +127,21 @@ public class SocialRepository {
 
     public void deleteRequest(int id) {
         jdbc.update("DELETE FROM viewer_access_requests WHERE id = ?", id);
+    }
+
+    // ---- Profile details ----
+
+    public List<ProfileDetail> detailsOf(String studentId) {
+        return jdbc.query("SELECT field, title, value, visibility FROM profile_details WHERE student_id = ? ORDER BY id",
+                (rs, i) -> new ProfileDetail(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)), studentId);
+    }
+
+    public void replaceDetails(String studentId, List<ProfileDetail> details) {
+        jdbc.update("DELETE FROM profile_details WHERE student_id = ?", studentId);
+        for (ProfileDetail d : details) {
+            jdbc.update("INSERT INTO profile_details (student_id, field, title, value, visibility) VALUES (?, ?, ?, ?, ?)",
+                    studentId, d.field(), d.title(), d.value(), d.visibility());
+        }
     }
 
     // ---- Groups inside Your Task Viewers (viewers in no group form the Default group) ----

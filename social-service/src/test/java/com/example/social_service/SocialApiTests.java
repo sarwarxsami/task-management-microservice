@@ -729,4 +729,112 @@ class SocialApiTests {
         addViewer(alice, "bob");
         mvc.perform(get(BASE + "/view-tasks").header("Authorization", bob)).andExpect(jsonPath("$", hasSize(1)));
     }
+
+    private ResultActions saveDetails(String auth, String detailsJson) throws Exception {
+        return mvc.perform(put(BASE + "/profile-details").header("Authorization", auth)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"details\":" + detailsJson + "}"));
+    }
+
+    private static String detail(String field, String value, String visibility) {
+        return "{\"field\":\"" + field + "\",\"value\":\"" + value + "\",\"visibility\":\"" + visibility + "\"}";
+    }
+
+    @Test
+    void profileDetailsFollowTheirVisibility() throws Exception {
+        String alice = token("s-alice", "user");
+        String bob = token("s-bob", "user");
+        String carol = token("s-carol", "user");
+        setListed(alice, true);
+        setListed(bob, true);
+        addViewer(alice, "bob");
+
+        saveDetails(alice, "[" + String.join(",",
+                detail("nickname", " Ali ", "open"),
+                detail("school", "Secret School", "trusted"),
+                detail("bio", "Private note", "only_me"),
+                detail("hometown", "   ", "open"),
+                "{\"field\":\"custom\",\"title\":\"Favorite teacher\",\"value\":\"Mr. K\",\"visibility\":\"open\"}") + "]")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(4)));
+
+        // the owner sees everything, with visibility
+        mvc.perform(get(BASE + "/profile-details").header("Authorization", alice))
+                .andExpect(jsonPath("$[0].value").value("Ali"))
+                .andExpect(jsonPath("$[*].field", contains("nickname", "school", "bio", "custom")));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", alice))
+                .andExpect(jsonPath("$.details", hasSize(4)));
+
+        // a viewer sees Trusted and Open, a stranger only Open; neither learns the visibility
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(jsonPath("$.details[*].field", contains("nickname", "school", "custom")))
+                .andExpect(jsonPath("$.details[0].visibility").value(nullValue()));
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.details[*].value", contains("Ali", "Mr. K")))
+                .andExpect(jsonPath("$.details[1].title").value("Favorite teacher"));
+        // admins get no extra access
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", token("s-admin", "admin")))
+                .andExpect(jsonPath("$.details", hasSize(2)));
+
+        // removing a viewer takes Trusted details away at once
+        mvc.perform(delete(BASE + "/viewers/bob").header("Authorization", alice)).andExpect(status().isNoContent());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", bob))
+                .andExpect(jsonPath("$.details", hasSize(2)));
+
+        // saving replaces everything; an unlisted Space stays closed
+        saveDetails(alice, "[" + detail("nickname", "New", "open") + "]").andExpect(jsonPath("$", hasSize(1)));
+        setListed(alice, false);
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void birthYearIsHiddenUnlessTheOwnerShowsIt() throws Exception {
+        String alice = token("s-alice", "user");
+        String carol = token("s-carol", "user");
+        setListed(alice, true);
+
+        // day and month only is the default
+        saveDetails(alice, "[" + detail("birthday", "2001-03-14", "open") + "]").andExpect(status().isOk());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.details[0].value").value("03-14"));
+
+        saveDetails(alice, "[" + detail("birthday", "2001-03-14", "open") + "," + detail("birthday_display", "day_month", "only_me") + "]")
+                .andExpect(status().isOk());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.details", hasSize(1)))
+                .andExpect(jsonPath("$.details[0].value").value("03-14"));
+
+        saveDetails(alice, "[" + detail("birthday", "2001-03-14", "open") + "," + detail("birthday_display", "full", "only_me") + "]")
+                .andExpect(status().isOk());
+        mvc.perform(get(BASE + "/spaces/alice").header("Authorization", carol))
+                .andExpect(jsonPath("$.details[*].field", contains("birthday")))
+                .andExpect(jsonPath("$.details[0].value").value("2001-03-14"));
+        // the owner always has the full date
+        mvc.perform(get(BASE + "/profile-details").header("Authorization", alice))
+                .andExpect(jsonPath("$[0].value").value("2001-03-14"));
+    }
+
+    @Test
+    void profileDetailsAreValidated() throws Exception {
+        String alice = token("s-alice", "user");
+        for (String bad : List.of(
+                detail("phone", "123", "open"),
+                detail("nickname", "x", "everyone"),
+                detail("nickname", "a", "open") + "," + detail("nickname", "b", "open"),
+                detail("birthday", "not-a-date", "open"),
+                detail("birthday", "2999-01-01", "open"),
+                detail("birthday", "1800-01-01", "open"),
+                detail("zodiac", "dragon", "open"),
+                detail("student_status", "maybe", "open"),
+                detail("bio", "x".repeat(1001), "open"),
+                "{\"field\":\"custom\",\"value\":\"no title\",\"visibility\":\"open\"}")) {
+            saveDetails(alice, "[" + bad + "]").andExpect(status().isBadRequest());
+        }
+        String many = String.join(",", java.util.Collections.nCopies(21,
+                "{\"field\":\"custom\",\"title\":\"t\",\"value\":\"v\",\"visibility\":\"open\"}"));
+        saveDetails(alice, "[" + many + "]").andExpect(status().isBadRequest());
+        mvc.perform(put(BASE + "/profile-details").header("Authorization", alice)
+                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
+        // nothing was saved by the failed attempts
+        mvc.perform(get(BASE + "/profile-details").header("Authorization", alice)).andExpect(jsonPath("$", hasSize(0)));
+    }
 }

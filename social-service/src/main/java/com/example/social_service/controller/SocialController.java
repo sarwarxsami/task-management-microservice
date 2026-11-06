@@ -23,6 +23,8 @@ import com.example.social_service.dto.Dtos.GroupBody;
 import com.example.social_service.dto.Dtos.GroupView;
 import com.example.social_service.dto.Dtos.Groups;
 import com.example.social_service.dto.Dtos.OpenTask;
+import com.example.social_service.dto.Dtos.ProfileDetail;
+import com.example.social_service.dto.Dtos.ProfileDetailsBody;
 import com.example.social_service.dto.Dtos.Requests;
 import com.example.social_service.dto.Dtos.Settings;
 import com.example.social_service.dto.Dtos.Space;
@@ -60,6 +62,16 @@ public class SocialController {
             throw new ApiException(HttpStatus.BAD_REQUEST, "listed is required");
         }
         return new Settings(service.setListed(caller(jwt), body.listed()));
+    }
+
+    @GetMapping("/profile-details")
+    public List<ProfileDetail> profileDetails(@AuthenticationPrincipal Jwt jwt) {
+        return service.profileDetails(caller(jwt));
+    }
+
+    @PutMapping("/profile-details")
+    public List<ProfileDetail> saveProfileDetails(@AuthenticationPrincipal Jwt jwt, @RequestBody ProfileDetailsBody body) {
+        return service.saveProfileDetails(caller(jwt), body.details());
     }
 
     @GetMapping("/discover")

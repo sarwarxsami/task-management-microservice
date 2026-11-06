@@ -34,6 +34,7 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
 - **Organising** — summary counts (total, active, completed, due today, overdue), status filter (all / active / completed / overdue), search, sort by newest, deadline, priority or title, overdue and due-soon highlighting.
 - **Usernames** — every user has a unique public username, separate from their name and email.
+- **Profile details** — optional details in dropdown groups (About, Birthday, Education, Work, Places, Interests, Goals, and your own custom fields), edited in Account and shown on your Space. Each detail is Only Me (the default), Trusted or Open; the birth year stays hidden unless you choose to show it.
 - **Task visibility** — each task is **Only Me** (default), **Trusted** or **Open**. A Trusted task is shown to **All Trusted** (everyone on Your Task Viewers), only to **Hand-picked** people chosen from that list in a searchable picker, or to one or more **Groups**.
 - **Groups** — inside Your Task Viewers you can create, rename and delete groups and add or remove members; a person can be in several groups, and viewers in no group form the **Default** group. Every Trusted task in My tasks has a **Who can see** button listing its groups (with members) and the Default people one by one.
 - **Your Task Viewers / View Tasks** — choose who can see your Trusted tasks (one-way), and see the tasks of people who added you. You can **leave** anyone's list from View Tasks (also an Unlisted owner's, without learning who it is); they are not told.
@@ -149,9 +150,10 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 |---|---|---|
 | GET | `/service/social-service/health` | Health check (public) |
 | GET / PUT | `/service/social-service/settings` | `{ "listed": true }` — Listed / Unlisted |
+| GET / PUT | `/service/social-service/profile-details` | Your profile details; PUT `{ "details": [{ "field", "title", "value", "visibility" }] }` replaces them all |
 | GET | `/service/social-service/discover` | Listed users and your relationship with each |
 | GET | `/service/social-service/open-tasks` | Open tasks of other users (owner hidden if Unlisted) |
-| GET | `/service/social-service/spaces/:username` | A user's Space with the tasks you may see |
+| GET | `/service/social-service/spaces/:username` | A user's Space with the details and tasks you may see |
 | GET | `/service/social-service/viewers` | Your Task Viewers |
 | POST | `/service/social-service/viewers` | `{ "username": "alice" }` — add a Listed user |
 | DELETE | `/service/social-service/viewers/:username` | Remove from Your Task Viewers |
