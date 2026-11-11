@@ -16,6 +16,7 @@ const state = {
   status: "all",
   view: "tasks",
   people: [],
+  myViewers: [],
   space: null,
   backView: "discover",
 };
@@ -1154,11 +1155,18 @@ async function refreshRequestBadge() {
 // ---------- Discover ----------
 
 async function loadDiscover() {
-  const [people, open] = await Promise.all([
+  const [people, viewers, open] = await Promise.all([
     api(`${SOCIAL}/discover`),
+    api(`${SOCIAL}/viewers`),
     api(`${SOCIAL}/open-tasks`),
   ]);
-  state.people = people;
+  const byUsername = new Map(people.map((p) => [p.person.username, p]));
+  state.people = people.filter((p) => !p.relationship.isMyTaskViewer);
+  // every viewer, also those who turned Unlisted since and so are missing from Discover
+  state.myViewers = viewers.map((v) => byUsername.get(v.person.username) ?? {
+    person: v.person,
+    relationship: { isMyTaskViewer: true, addedMe: false, requestSentId: null, requestReceivedId: null, acceptsRequests: false },
+  });
   renderPeople();
 
   $("open-count").textContent = plural(open.length, "task");
@@ -1166,29 +1174,40 @@ async function loadDiscover() {
   $("open-empty").hidden = open.length > 0;
 }
 
+function personCard({ person, relationship }) {
+  const li = el("li", "person-card");
+  const info = el("div", "person-info");
+  info.append(personLink(person));
+  const text = relationText(relationship);
+  if (text) info.append(el("div", "hint", text));
+
+  const actions = el("div", "row-actions");
+  actions.append(...relationButtons(person, relationship, async () => {
+    await loadDiscover();
+    refreshRequestBadge();
+  }));
+  li.append(info, actions);
+  return li;
+}
+
+// The search box filters both Discover and Your Viewers list
 function renderPeople() {
   const q = $("discover-search").value.trim().toLowerCase();
-  const people = state.people.filter((p) =>
-    !q || `${p.person.name} ${p.person.username}`.toLowerCase().includes(q));
+  const matches = (p) => !q || `${p.person.name} ${p.person.username}`.toLowerCase().includes(q);
+  const people = state.people.filter(matches);
+  const viewers = state.myViewers.filter(matches);
 
-  $("discover-count").textContent = `${state.people.length} listed`;
-  $("people-list").replaceChildren(...people.map(({ person, relationship }) => {
-    const li = el("li", "person-card");
-    const info = el("div", "person-info");
-    info.append(personLink(person));
-    const text = relationText(relationship);
-    if (text) info.append(el("div", "hint", text));
-
-    const actions = el("div", "row-actions");
-    actions.append(...relationButtons(person, relationship, async () => {
-      await loadDiscover();
-      refreshRequestBadge();
-    }));
-    li.append(info, actions);
-    return li;
-  }));
+  $("discover-count").textContent = plural(state.people.length, "person", "people");
+  $("people-list").replaceChildren(...people.map(personCard));
   $("people-empty").hidden = people.length > 0;
-  $("people-empty").textContent = state.people.length === 0 ? "No listed users yet." : "Nobody matches your search.";
+  $("people-empty").textContent = state.people.length === 0 ? "Nobody new to discover." : "Nobody matches your search.";
+
+  $("my-viewers-count").textContent = plural(state.myViewers.length, "person", "people");
+  $("my-viewers-list").replaceChildren(...viewers.map(personCard));
+  $("my-viewers-empty").hidden = viewers.length > 0;
+  $("my-viewers-empty").textContent = state.myViewers.length === 0
+    ? "Your Viewers list is empty. Add people from Discover above."
+    : "Nobody on your list matches your search.";
 }
 
 $("discover-search").addEventListener("input", renderPeople);
@@ -1862,7 +1881,13 @@ const TOURS = {
       target: "#discover-card",
       open: ["#discover-card"],
       title: "Discover",
-      text: "Listed people. Search by name or username, click a name to open their Space, add them to your viewers, or send a Viewer Access Request.",
+      text: "Listed people who are not on your list yet. Search by name or username, click a name to open their Space, add them to your viewers, or send a Viewer Access Request.",
+    },
+    {
+      target: "#my-viewers-card",
+      open: ["#my-viewers-card"],
+      title: "Your Viewers list",
+      text: "Everyone on Your Task Viewers. They can see your Trusted tasks. Open their Space or remove them from your list here.",
     },
     {
       target: "#open-card",

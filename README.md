@@ -40,7 +40,7 @@ A microservices-based task management system deployed on AWS EC2 with a full CI/
 - **Groups** — inside Your Task Viewers you can create, rename and delete groups and add or remove members; a person can be in several groups, and viewers in no group form the **Default** group. Every Trusted task in My tasks has a **Who can see** button listing its groups (with members) and the Default people one by one.
 - **Your Task Viewers / View Tasks** — choose who can see your Trusted tasks (one-way), and see the tasks of people who added you. You can **leave** anyone's list from View Tasks (also an Unlisted owner's, without learning who it is); they are not told.
 - **Viewer Access Requests** — ask someone to add you to their Task Viewers; accept or decline requests you receive (with a badge for pending ones).
-- **Discover and Spaces** — browse Listed users and an Open Tasks feed, and open anyone's Space to see what they share. **Listed / Unlisted** controls whether you appear.
+- **Discover and Spaces** — browse Listed users who are not on your list yet (the people already on it are in **Your Viewers list** just below) and an Open Tasks feed, and open anyone's Space to see what they share. **Listed / Unlisted** controls whether you appear.
 
 ---
 

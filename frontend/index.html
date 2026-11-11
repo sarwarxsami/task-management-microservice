@@ -137,7 +137,7 @@
           <summary><h3>4 · Discover, Spaces and Listed / Unlisted</h3></summary>
           <div class="fold-body">
             <p>Every account starts <b>Unlisted</b>: hidden from Discover, with a Space only you can open. Switch to <b>Listed</b> in Account to appear in Discover and let others open your Space.</p>
-            <p><b>Discover</b> shows Listed people and a feed of Open tasks. Click a name to open their <b>Space</b>: their username, name and the tasks you are allowed to see. Everything there is read-only.</p>
+            <p><b>Discover</b> shows Listed people who are not on Your Task Viewers yet, and a feed of Open tasks. The people already on your list are in <b>Your Viewers list</b>, just below it. Click a name to open their <b>Space</b>: their username, name and the tasks you are allowed to see. Everything there is read-only.</p>
             <p>Open tasks of Unlisted people still appear, marked "User is Unlisted". The people on an Unlisted user's own Task Viewers list are the exception: for them the account works as if it were Listed.</p>
           </div>
         </details>
@@ -242,17 +242,30 @@
   <!-- DISCOVER -->
   <main id="view-discover" hidden>
     <div class="columns even">
-      <details class="card fold" id="discover-card">
-        <summary>
-          <h2>Discover</h2>
-          <span class="hint" id="discover-count"></span>
-        </summary>
-        <div class="fold-body">
-          <input id="discover-search" type="search" placeholder="Search by name or username..." aria-label="Search people" />
-          <ul id="people-list" class="people"></ul>
-          <p id="people-empty" class="empty" hidden>No listed users yet.</p>
-        </div>
-      </details>
+      <div class="stack">
+        <details class="card fold" id="discover-card">
+          <summary>
+            <h2>Discover</h2>
+            <span class="hint" id="discover-count"></span>
+          </summary>
+          <div class="fold-body">
+            <input id="discover-search" type="search" placeholder="Search by name or username..." aria-label="Search people" />
+            <ul id="people-list" class="people"></ul>
+            <p id="people-empty" class="empty" hidden>Nobody new to discover.</p>
+          </div>
+        </details>
+
+        <details class="card fold" id="my-viewers-card">
+          <summary>
+            <h2>Your Viewers list</h2>
+            <span class="hint" id="my-viewers-count"></span>
+          </summary>
+          <div class="fold-body">
+            <ul id="my-viewers-list" class="people"></ul>
+            <p id="my-viewers-empty" class="empty" hidden>Your Viewers list is empty.</p>
+          </div>
+        </details>
+      </div>
 
       <details class="card fold" id="open-card">
         <summary>
