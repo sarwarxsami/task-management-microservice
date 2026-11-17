@@ -1,7 +1,7 @@
 (This Readme.md is LLM(Claude) Generated)
 # Task Management Microservice
 
-A microservices-based task management system deployed on AWS EC2 with a full CI/CD pipeline, reverse proxy, and HTTPS.
+A microservices-based task management system deployed on a Microsoft Azure VM with a full CI/CD pipeline, reverse proxy, and HTTPS.
 
 ---
 
@@ -197,9 +197,9 @@ Not routed by Nginx (it only proxies `/service/<name>/...`) and protected by the
 | Orchestration | Docker Compose | Manages all containers, networks, and volumes |
 | Reverse Proxy | Nginx | Single entry point, routes traffic to services |
 | SSL | Let's Encrypt (Certbot) | Free HTTPS certificate, auto-renewed |
-| CI/CD | GitHub Actions | Builds images, pushes to Docker Hub, deploys to EC2 |
+| CI/CD | GitHub Actions | Builds images, pushes to Docker Hub, deploys to the VM |
 | Registry | Docker Hub | Stores built images for all three services |
-| Cloud | AWS EC2 (Ubuntu), t3.small | Single VM (2 GB RAM + 1 GB swap, 16 GB gp3) with an Elastic IP |
+| Cloud | Microsoft Azure VM (Ubuntu 24.04), B1ms | Single VM (2 GB RAM + 2 GB swap, 64 GB Premium SSD) with a static public IP, India South Central (Hyderabad) |
 | Domain | Namecheap (.me) | Via GitHub Student Developer Pack |
 
 ---
@@ -220,13 +220,15 @@ Not routed by Nginx (it only proxies `/service/<name>/...`) and protected by the
 - **GitHub Secrets** — Docker Hub credentials, VM IP, SSH username, and private key stored as encrypted secrets, never exposed in workflow logs.
 - **Nginx reverse proxy** — single Nginx container routes all traffic: `/service/user-service/*` → user-service, `/service/task-service/*` → task-service, `/service/social-service/*` → social-service (each prefix ends in `/`, so look-alike paths such as `/service/task-serviceX` are not proxied), `/` → static frontend. App services have no public ports.
 - **HTTPS with Let's Encrypt** — Certbot issued a free SSL certificate for `task.sarwarxsami.me`; Nginx handles SSL termination; HTTP automatically redirects to HTTPS and an HSTS header (`max-age` one year) tells browsers to stay on HTTPS. Nginx serves `/.well-known/acme-challenge/` from `/var/www/certbot` so renewals work while it holds port 80 (see *Certificate renewal* below).
-- **Custom domain** — `sarwarxsami.me` registered free via GitHub Student Developer Pack on Namecheap; `task.sarwarxsami.me` subdomain pointed to EC2 via A record.
-- **Memory budget** — both JVMs run with a fixed small footprint (`JAVA_TOOL_OPTIONS`: 192 MB heap, Serial GC, capped metaspace and code cache), every service's database pool is limited to 5 connections (Hikari in the Spring services, `pg.Pool` `max` in user-service), and every container has a `mem_limit`, so one service cannot starve the others. The VM has a 1 GB swap file (`vm.swappiness=10`) as a safety net.
-- **Elastic IP** — the instance keeps the same public IP (`13.202.221.95`) across stops and resizes, so DNS and the `VM_HOST` secret do not need to change.
-- **EC2 Security Group firewall** — only ports 22 (SSH), 80 (HTTP), and 443 (HTTPS) open publicly; all app ports (3000, 8080, 5432) closed to the internet.
+- **Custom domain** — `sarwarxsami.me` registered free via GitHub Student Developer Pack on Namecheap; `task.sarwarxsami.me` subdomain pointed to the VM via A record.
+- **Memory budget** — both JVMs run with a fixed small footprint (`JAVA_TOOL_OPTIONS`: 192 MB heap, Serial GC, capped metaspace and code cache), every service's database pool is limited to 5 connections (Hikari in the Spring services, `pg.Pool` `max` in user-service), and every container has a `mem_limit`, so one service cannot starve the others. The VM has a 2 GB swap file (`vm.swappiness=10`) as a safety net.
+- **Static public IP** — the VM keeps the same public IP (`172.198.51.71`) across restarts and resizes, so DNS and the `VM_HOST` secret do not need to change.
+- **Network Security Group firewall** — only ports 22 (SSH), 80 (HTTP), and 443 (HTTPS) open publicly; all app ports (3000, 8080, 5432) closed to the internet. SSH accepts keys only (no passwords) and fail2ban blocks repeated failed logins.
+- **Cloud migration (AWS → Azure)** — the app first ran on an AWS EC2 t3.small. It was moved to Azure (Azure for Students) with only a few minutes of downtime: the VM was created with the Azure CLI and set up by cloud-init (Docker, Compose, swap), the Let's Encrypt certificate, `.env` and app files were copied over, the AWS app was stopped and its database dumped and restored on Azure (verified identical by checksum), the GitHub Secrets were pointed at the new VM with a new deploy key, and the DNS A record was switched. A re-run of the pipeline then deployed to Azure end to end.
+- **Cost control** — a monthly Azure budget sends email alerts at 50%, 80% and 100% of the planned spend.
 - **Static frontend** — plain HTML, CSS, and JS served directly by Nginx; communicates with all three backend services via same-origin `fetch` calls. User data is rendered with `textContent` (never `innerHTML`) and a Content-Security-Policy header is set.
 - **Database initialization and migrations** — `db/init.sql` is idempotent (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`). It runs automatically on first startup, and every deploy backs up the database (`~/backups`, last 10 kept) and re-applies it before starting new containers. The schema is owned by this file; Hibernate is set to `ddl-auto=none`.
-- **Shell automation** — a local `connect.sh` script (kept outside this repo) resolves EC2 DNS to the current public IP, updates the `VM_HOST` GitHub Secret via GitHub CLI, and SSHes into the VM in one command; originally written for the dynamic IP of a non-Elastic instance; still handy for connecting and keeping the secret in sync.
+- **Shell automation** — during the AWS period, a local `connect.sh` script (kept outside this repo) resolved the EC2 DNS name to the current public IP, updated the `VM_HOST` GitHub Secret via GitHub CLI, and SSHed into the VM in one command.
 
 ---
 
