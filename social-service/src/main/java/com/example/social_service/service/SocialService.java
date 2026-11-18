@@ -353,25 +353,19 @@ public class SocialService {
                 .filter(r -> info.containsKey(r.requesterId()))
                 .map(r -> new RequestEntry(r.id(), person(info.get(r.requesterId()), listed.contains(r.requesterId())), r.createdAt()))
                 .toList();
-        // the requester typed the username, so it is shown back; an Unlisted person's name stays hidden
         List<RequestEntry> out = outgoing.stream()
                 .filter(r -> info.containsKey(r.ownerId()))
-                .map(r -> {
-                    UserInfo owner = info.get(r.ownerId());
-                    Person shown = listed.contains(r.ownerId())
-                            ? person(owner, true)
-                            : new Person(owner.username(), null, false);
-                    return new RequestEntry(r.id(), shown, r.createdAt());
-                })
+                .map(r -> new RequestEntry(r.id(), visiblePerson(info.get(r.ownerId()), listed.contains(r.ownerId())), r.createdAt()))
                 .toList();
         return new Requests(in, out);
     }
 
     public int sendRequest(Caller caller, String username) {
-        // Unlisted people can be asked too, by anyone who already knows their username;
-        // Stop requests is how anyone, Listed or not, turns this off
         UserInfo target = requireUser(username);
         requireNotSelf(caller, target);
+        if (!repo.isListed(target.studentId())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "User is Unlisted");
+        }
         if (repo.isViewer(target.studentId(), caller.studentId())) {
             throw new ApiException(HttpStatus.CONFLICT, "You are already one of their task viewers");
         }

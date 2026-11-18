@@ -145,7 +145,7 @@
         <details class="fold sub">
           <summary><h3>5 · Viewer Access Requests</h3></summary>
           <div class="fold-body">
-            <p>Want to see someone's Trusted tasks? Send a <b>Viewer Access Request</b> from Discover or their Space. If you know someone's username, for example from real life, you can also type it under the Discover list; this works for Unlisted accounts too. Until they accept, an Unlisted person shows only as the username you typed. A request carries no message. They can accept or decline, and you can cancel it. Anyone can stop receiving requests in <b>Account</b>.</p>
+            <p>Want to see someone's Trusted tasks? Send a <b>Viewer Access Request</b> from Discover or their Space. It carries no message. They can accept or decline, and you can cancel it. Anyone can stop receiving requests in <b>Account</b>.</p>
             <p>Requests wait quietly on the Viewers page; the small number on the Viewers button is the only sign of them. Nothing is sent anywhere else.</p>
             <p>Once accepted, their Trusted tasks shared with you show up under <b>View Tasks</b>, where you can also leave their list again.</p>
           </div>
@@ -252,13 +252,6 @@
             <input id="discover-search" type="search" placeholder="Search by name or username..." aria-label="Search people" />
             <ul id="people-list" class="people"></ul>
             <p id="people-empty" class="empty" hidden>Nobody new to discover.</p>
-            <form id="form-request-username" class="stack tight request-by-username">
-              <label for="request-username" class="hint">Know someone's username, even of an Unlisted account? Ask to see their Trusted tasks.</label>
-              <div class="row">
-                <input id="request-username" name="username" placeholder="Their username" aria-label="Their username" autocomplete="off" required />
-                <button type="submit">Request access</button>
-              </div>
-            </form>
           </div>
         </details>
 
@@ -434,7 +427,7 @@
       <h2>Space visibility</h2>
       <div class="choice" role="radiogroup" aria-label="Space visibility">
         <label class="option"><input type="radio" name="listed" value="true" /> <span><b>Listed</b> Shown in Discover. Anyone can open your Space and send you a Viewer Access Request.</span></label>
-        <label class="option"><input type="radio" name="listed" value="false" /> <span><b>Unlisted</b> Hidden from everyone except the people on Your Task Viewers. Your Open tasks still appear, marked "User is Unlisted". Someone who already knows your username can still send you a Viewer Access Request, unless you stop requests below.</span></label>
+        <label class="option"><input type="radio" name="listed" value="false" /> <span><b>Unlisted</b> Hidden from everyone except the people on Your Task Viewers. Your Open tasks still appear, marked "User is Unlisted".</span></label>
       </div>
       <label class="option"><input type="checkbox" id="stop-requests" /> <span><b>Stop others from requesting access to be in your list</b> Nobody can send you a Viewer Access Request. Requests already waiting stay until you answer them, and you can still add people yourself.</span></label>
     </section>

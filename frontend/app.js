@@ -292,7 +292,7 @@ function showWelcome() {
 
   dialog.showModal();
   step(1, "Your account is Unlisted",
-    "Right now nobody can find you: you are hidden from Discover, your Space opens only for you, and nobody can add you to their Task Viewers. Only someone who already knows your username can send you a request, and you can stop that in Account. To show your account to others, make it Listed. You can change this anytime in Account.",
+    "Right now nobody can find you: you are hidden from Discover, your Space opens only for you, and nobody can send you a request or add you to their Task Viewers. To show your account to others, make it Listed. You can change this anytime in Account.",
     button("Make my account Listed", "", async () => {
       await api(`${SOCIAL}/settings`, { method: "PUT", body: { listed: true } });
       trusted(true);
@@ -1045,11 +1045,6 @@ function personLink(person) {
     box.append(el("span", "unlisted", UNLISTED));
     return box;
   }
-  // no name: an Unlisted account you asked by username; only the username you typed is shown
-  if (!person.name) {
-    box.append(el("span", "mono", `@${person.username}`), el("span", "pill", "unlisted"));
-    return box;
-  }
   const name = el("button", "link", person.name);
   name.type = "button";
   name.disabled = !person.listed;
@@ -1220,20 +1215,6 @@ function renderPeople() {
 }
 
 $("discover-search").addEventListener("input", renderPeople);
-
-// Request by username: works for Unlisted accounts too, unless they stopped requests
-$("form-request-username").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const form = e.currentTarget;
-  withBusy(form, async () => {
-    const username = form.elements.username.value.trim().replace(/^@/, "").toLowerCase();
-    await api(`${SOCIAL}/requests`, { method: "POST", body: { username } });
-    form.reset();
-    toast(`Viewer Access Request sent to @${username}`);
-    await loadDiscover();
-    refreshRequestBadge();
-  });
-});
 
 // ---------- Space ----------
 
@@ -1904,7 +1885,7 @@ const TOURS = {
       target: "#discover-card",
       open: ["#discover-card"],
       title: "Discover",
-      text: "Listed people who are not on your list yet. Search by name or username, click a name to open their Space, add them to your viewers, or send a Viewer Access Request. Know someone's username? Type it at the bottom to request access, even if their account is Unlisted.",
+      text: "Listed people who are not on your list yet. Search by name or username, click a name to open their Space, add them to your viewers, or send a Viewer Access Request.",
     },
     {
       target: "#my-viewers-card",
