@@ -31,7 +31,7 @@ A microservices-based task management system deployed on a Microsoft Azure VM wi
 - **Welcome pop-ups** — right after registering, one pop-up explains that the account is Unlisted (with a button to make it Listed) and a second explains adding people to Your Task Viewers.
 - **Page tours and Help** — nothing starts by itself. Tasks, Discover, Viewers, Account and Users each have their own short tour that stays on that page and outlines its buttons and sections (Next / Back / Skip, arrow keys, Esc); the Tasks tour also introduces the menu buttons without opening those pages. Until a page's tour is taken or declined, a small card in the bottom-left corner of that page offers it; after that the corner shows a **Help** button with **Take another tour** for that page. Stored per account and page on the server.
 - **Accounts** — register with an email address, confirmed by a 6-digit emailed code, and log in with username or email plus password (bcrypt-hashed). JWT sessions, change name, username, email and password, reset a forgotten password with an emailed code, delete own account. Accounts from before email existed log in with their username and can add an email in Account.
-- **Roles** — everyone, admins included, manages only their own tasks. An `admin` additionally sees every account's name and username and can delete accounts; nothing else (no email addresses, no other users' tasks, no renaming or role changes). Admins are exactly the internal account keys in `ADMIN_STUDENT_IDS`, checked on every request.
+- **Roles** — everyone, admins included, manages only their own tasks. An `admin` additionally sees every account's name, username and whether it is Listed or Unlisted, and can delete accounts; nothing else (no email addresses, no other users' tasks, no renaming or role changes). Admins are exactly the internal account keys in `ADMIN_STUDENT_IDS`, checked on every request.
 - **Tasks** — title, optional description and deadline, priority (low / medium / high), mark done/undone, edit inline, delete, clear all completed.
 - **Organising** — summary counts (total, active, completed, due today, overdue), status filter (all / active / completed / overdue), search, sort by newest, deadline, priority or title, overdue and due-soon highlighting.
 - **Usernames** — every user has a unique public username, separate from their name and email.
@@ -62,7 +62,7 @@ The token carries no role. Admin rights are read from `ADMIN_STUDENT_IDS` on eve
 | POST | `/service/user-service/auth/password/forgot` | public | `{ email }` — emails a code if an account uses it; same answer either way |
 | POST | `/service/user-service/auth/password/reset` | public | `{ email, code, newPassword }` — set a new password |
 | GET | `/service/user-service/auth/me` | any user | Current user |
-| GET | `/service/user-service/users` | admin | List users → `[{ id, name, username }]` only |
+| GET | `/service/user-service/users` | admin | List users → `[{ id, name, username, listed }]` only |
 | DELETE | `/service/user-service/users/by-id/:id` | admin | Delete a user (by the `id` from the list) and, via cascade, their tasks |
 | PUT | `/service/user-service/users/:studentId` | owner | `name`, `username`, `currentPassword` + `newPassword`. Roles cannot be changed |
 | DELETE | `/service/user-service/users/:studentId` | owner | Delete own account and (via cascade) own tasks |
@@ -141,7 +141,7 @@ Owns Space visibility, Your Task Viewers and Viewer Access Requests, and decides
 | Open | every logged-in user |
 
 - **Listed** users appear in **Discover**; anyone can open their **Space** (username, name and the tasks they may see, read-only).
-- **Unlisted** users (the default) are hidden from Discover, their Space opens only for themselves, and they cannot receive requests. The people on an Unlisted user's own Your Task Viewers list are the exception: for them the account works as if it were Listed. Their Open tasks still appear in the Open Tasks feed, and they appear in **View Tasks**, as **"User is Unlisted"**.
+- **Unlisted** users (the default) are hidden from Discover, their Space opens only for themselves, and only someone who already knows their username can send them a request (typed under the Discover list; turned off by **Stop requests**). Until it is accepted, the requester sees only that username, never the name. The people on an Unlisted user's own Your Task Viewers list are the exception: for them the account works as if it were Listed. Their Open tasks still appear in the Open Tasks feed, and they appear in **View Tasks**, as **"User is Unlisted"**.
 - Adding someone to Your Task Viewers is one-way. A **Viewer Access Request** asks someone to add you to theirs.
 - A Hand-picked or Group task never falls back to All Trusted: if every picked person leaves Your Task Viewers, or every chosen group is deleted, it is visible to nobody else. A new Hand-picked or Group task is saved as Only Me until its audience is stored, so it is never briefly visible to all trusted viewers.
 - Removing someone from Your Task Viewers also removes them from all of your groups.

@@ -856,9 +856,17 @@ button.link:disabled {
   text-align: left;
 }
 
-#form-viewer input {
+#form-viewer input,
+#form-request-username input {
   flex: 1 1 160px;
   width: auto;
+}
+
+/* Request by username, under the Discover list */
+.request-by-username {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
 
 /* ---------- dropdown sections (closed until clicked) ---------- */

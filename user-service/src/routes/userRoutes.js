@@ -11,9 +11,14 @@ const { codeLimiter, USERNAME_TAKEN, EMAIL_TAKEN } = require('./authRoutes');
 router.use(requireAuth);
 
 // GET /service/user-service/users (admin)
-// Admins only see each account's name and username; id is an opaque handle for deleting
+// Admins only see each account's name, username and whether it is Listed; id is an opaque handle for deleting.
+// Listed lives in social-service's profiles table; no row there means Unlisted.
 router.get("/", requireAdmin, async (req, res) => {
-    const result = await pool.query("SELECT id, name, username FROM users ORDER BY created_at, id");
+    const result = await pool.query(
+        `SELECT u.id, u.name, u.username, COALESCE(p.listed, false) AS listed
+         FROM users u LEFT JOIN profiles p ON p.student_id = u.student_id
+         ORDER BY u.created_at, u.id`
+    );
     return res.json(result.rows);
 });
 

@@ -298,13 +298,17 @@ class SocialApiTests {
         String alice = token("s-alice", "user");
         String bob = token("s-bob", "user");
 
-        // cannot request an unlisted user
+        // an Unlisted user can be asked by anyone who knows the username; her name stays hidden from bob
+        int id = sendRequest(bob, "alice");
+        mvc.perform(get(BASE + "/requests").header("Authorization", bob))
+                .andExpect(jsonPath("$.outgoing[0].person.username").value("alice"))
+                .andExpect(jsonPath("$.outgoing[0].person.name").value(nullValue()))
+                .andExpect(jsonPath("$.outgoing[0].person.listed").value(false));
         mvc.perform(post(BASE + "/requests").header("Authorization", bob)
-                .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"alice\"}"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"nobody\"}"))
                 .andExpect(status().isNotFound());
 
         setListed(alice, true);
-        int id = sendRequest(bob, "alice");
         mvc.perform(post(BASE + "/requests").header("Authorization", bob)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"alice\"}"))
                 .andExpect(status().isConflict());
@@ -949,6 +953,13 @@ class SocialApiTests {
         setListed(alice, false);
         mvc.perform(get(BASE + "/settings").header("Authorization", alice))
                 .andExpect(jsonPath("$.stopRequests").value(true));
+
+        // Unlisted and stopped: someone who knows her username still cannot ask
+        String other = token("s-admin", "admin");
+        mvc.perform(post(BASE + "/requests").header("Authorization", other)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"alice\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("This person is not taking requests"));
         mvc.perform(put(BASE + "/settings").header("Authorization", alice)
                 .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
     }

@@ -243,12 +243,15 @@ test("authorization on user routes", async () => {
     assert.equal((await request(app).get(`${BASE}/users`)).status, 401);
     assert.equal((await auth(request(app).get(`${BASE}/users`), alice)).status, 403);
 
-    // admins see only id, name and username
+    // admins see only id, name, username and Listed; no profiles row means Unlisted
+    await pool.query("INSERT INTO profiles (student_id, listed) VALUES ('t-bob', true)");
     const list = await auth(request(app).get(`${BASE}/users`), admin);
     assert.equal(list.status, 200);
     const bobRow = list.body.find(u => u.username === "t_bob");
-    assert.deepEqual(Object.keys(bobRow).sort(), ["id", "name", "username"]);
-    assert.ok(list.body.every(u => Object.keys(u).length === 3));
+    assert.deepEqual(Object.keys(bobRow).sort(), ["id", "listed", "name", "username"]);
+    assert.ok(list.body.every(u => Object.keys(u).length === 4));
+    assert.equal(bobRow.listed, true);
+    assert.equal(list.body.find(u => u.username === "t_alice").listed, false);
 
     assert.equal((await put("t-bob", alice).send({ name: "Hacked" })).status, 403);
     assert.equal((await put("t-alice", alice).send({ role: "admin" })).status, 403);
